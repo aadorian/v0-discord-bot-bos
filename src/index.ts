@@ -48,6 +48,10 @@ const commands = [
   new SlashCommandBuilder().setName("airdrop-leaderboard").setDescription("View the top miners"),
 
   new SlashCommandBuilder().setName("airdrop-stats").setDescription("View your mining statistics"),
+
+  new SlashCommandBuilder()
+    .setName("btc-info")
+    .setDescription("Display Bitcoin technical data structures and types"),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -306,6 +310,44 @@ client.on("interactionCreate", async (interaction) => {
             `• Total Claims: \`${stats.totalClaims}\`\n` +
             `• Best Zero Bits: \`${stats.bestZeroBits}\`\n` +
             `• Average Reward: \`${stats.averageReward.toFixed(2)}\` CHARMS`,
+        })
+        break
+      }
+
+      case "btc-info": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        await interaction.editReply({
+          content:
+            `🔧 **Bitcoin Technical Data Structures**\n\n` +
+            `**Core Types:**\n` +
+            `• **Address**: Bitcoin address for receiving/sending\n` +
+            `• **Amount**: Value in satoshis (1 BTC = 100,000,000 sats)\n` +
+            `• **FeeRate**: Transaction fee per virtual byte (sat/vB)\n` +
+            `• **Network**: Bitcoin network (mainnet/testnet/regtest)\n\n` +
+            `**Script & Signature Types:**\n` +
+            `• **ScriptBuf**: Script containing spending conditions\n` +
+            `• **TapLeafHash**: Hash of a Taproot script leaf\n` +
+            `• **TapSighashType**: Taproot signature hash type\n` +
+            `• **XOnlyPublicKey**: 32-byte x-only public key for Taproot\n\n` +
+            `**Transaction Components:**\n` +
+            `• **Transaction**: Complete Bitcoin transaction\n` +
+            `• **TxIn**: Transaction input (spending previous output)\n` +
+            `• **TxOut**: Transaction output (receiving address + amount)\n` +
+            `• **Txid**: Transaction identifier (32-byte hash)\n\n` +
+            `**Advanced Types:**\n` +
+            `• **OutPoint**: Reference to a specific output (txid + index)\n` +
+            `• **Witness**: Segregated witness data for SegWit txs\n` +
+            `• **Weight**: Transaction weight units (max 400,000)\n\n` +
+            `📍 **Your Address:** \`${wallet.address}\`\n` +
+            `🌐 **Network:** Bitcoin Testnet4`,
         })
         break
       }
