@@ -1,0 +1,276 @@
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js"
+import { config } from "dotenv"
+import { WalletManager } from "./wallet"
+import { MiningManager } from "./mining"
+import { AirdropManager } from "./airdrop"
+import { DatabaseManager } from "./database"
+
+config()
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+})
+
+const db = new DatabaseManager()
+const walletManager = new WalletManager(db)
+const miningManager = new MiningManager()
+const airdropManager = new AirdropManager(db, walletManager)
+
+// Define slash commands
+const commands = [
+  new SlashCommandBuilder()
+    .setName("airdrop-start")
+    .setDescription("Start the airdrop process - create your wallet and begin mining"),
+
+  new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
+
+  new SlashCommandBuilder()
+    .setName("airdrop-mine")
+    .setDescription("Start mining tokens")
+    .addIntegerOption((option) =>
+      option.setName("duration").setDescription("Mining duration in seconds (default: 60)").setRequired(false),
+    ),
+
+  new SlashCommandBuilder().setName("airdrop-claim").setDescription("Claim your mined tokens"),
+
+  new SlashCommandBuilder().setName("airdrop-balance").setDescription("Check your token balance"),
+
+  new SlashCommandBuilder().setName("airdrop-leaderboard").setDescription("View the top miners"),
+
+  new SlashCommandBuilder().setName("airdrop-stats").setDescription("View your mining statistics"),
+].map((command) => command.toJSON())
+
+// Register slash commands
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN!)
+
+client.once("ready", async () => {
+  console.log(`✅ Bot is ready! Logged in as ${client.user?.tag}`)
+
+  try {
+    console.log("🔄 Refreshing application commands...")
+    await rest.put(Routes.applicationCommands(client.user!.id), { body: commands })
+    console.log("✅ Successfully registered application commands.")
+  } catch (error) {
+    console.error("❌ Error registering commands:", error)
+  }
+})
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return
+
+  const userId = interaction.user.id
+  const username = interaction.user.username
+
+  try {
+    await interaction.deferReply({ ephemeral: false })
+
+    switch (interaction.commandName) {
+      case "airdrop-start": {
+        const wallet = await walletManager.createWallet(userId, username)
+
+        await interaction.editReply({
+          content:
+            `🎉 **Welcome to the CHARMS Airdrop!**\n\n` +
+            `✅ Your wallet has been created!\n` +
+            `📍 **Address:** \`${wallet.address}\`\n\n` +
+            `**Next Steps:**\n` +
+            `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
+            `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
+            `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
+            `⚠️ **Keep your seed phrase safe!** Use \`/airdrop-wallet\` to view it privately.`,
+        })
+        break
+      }
+
+      case "airdrop-wallet": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        // Send wallet info as ephemeral message
+        await interaction.deleteReply()
+        await interaction.followUp({
+          ephemeral: true,
+          content:
+            `🔐 **Your Wallet Information**\n\n` +
+            `**Address:** \`${wallet.address}\`\n` +
+            `**Seed Phrase:** ||\`${wallet.seedPhrase}\`||\n\n` +
+            `⚠️ **NEVER share your seed phrase with anyone!**`,
+        })
+        break
+      }
+
+      case "airdrop-mine": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        const duration = interaction.options.getInteger("duration") || 60
+
+        if (duration < 10 || duration > 300) {
+          await interaction.editReply({
+            content: "❌ Mining duration must be between 10 and 300 seconds.",
+          })
+          return
+        }
+
+        await interaction.editReply({
+          content:
+            `⛏️ **Mining Started!**\n\n` +
+            `Finding the hash with maximum leading zero bits...\n` +
+            `Duration: ${duration} seconds\n\n` +
+            `🔄 Mining in progress...`,
+        })
+
+        const result = await miningManager.mine(userId, duration)
+
+        await interaction.followUp({
+          content:
+            `✅ **Mining Complete!**\n\n` +
+            `🏆 **Best Hash Found:**\n` +
+            `\`${result.hash}\`\n\n` +
+            `📊 **Mining Stats:**\n` +
+            `• Nonce: \`${result.nonce}\`\n` +
+            `• Zero Bits: \`${result.zeroBits}\`\n` +
+            `• Attempts: \`${result.attempts.toLocaleString()}\`\n\n` +
+            `💰 **Estimated Reward:** \`${result.reward.toFixed(2)}\` CHARMS\n\n` +
+            `Use \`/airdrop-claim\` to claim your tokens!`,
+        })
+        break
+      }
+
+      case "airdrop-claim": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        const claim = await airdropManager.claimTokens(userId)
+
+        if (!claim.success) {
+          await interaction.editReply({
+            content: `❌ ${claim.message}`,
+          })
+          return
+        }
+
+        await interaction.editReply({
+          content:
+            `🎉 **Tokens Claimed Successfully!**\n\n` +
+            `💰 **Amount:** \`${claim.amount!.toFixed(2)}\` CHARMS\n` +
+            `📊 **New Balance:** \`${claim.newBalance!.toFixed(2)}\` CHARMS\n` +
+            `🔗 **Transaction ID:** \`${claim.txId}\`\n\n` +
+            `Congratulations! Your tokens have been added to your wallet.`,
+        })
+        break
+      }
+
+      case "airdrop-balance": {
+        const balance = await airdropManager.getBalance(userId)
+
+        if (balance === null) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        const stats = await airdropManager.getUserStats(userId)
+
+        await interaction.editReply({
+          content:
+            `💰 **Your Token Balance**\n\n` +
+            `**Balance:** \`${balance.toFixed(2)}\` CHARMS\n\n` +
+            `📊 **Statistics:**\n` +
+            `• Total Mined: \`${stats.totalMined.toFixed(2)}\` CHARMS\n` +
+            `• Total Claims: \`${stats.totalClaims}\`\n` +
+            `• Mining Sessions: \`${stats.miningSessions}\`\n` +
+            `• Best Zero Bits: \`${stats.bestZeroBits}\``,
+        })
+        break
+      }
+
+      case "airdrop-leaderboard": {
+        const leaderboard = await airdropManager.getLeaderboard(10)
+
+        if (leaderboard.length === 0) {
+          await interaction.editReply({
+            content: "📊 No one has started mining yet! Be the first!",
+          })
+          return
+        }
+
+        let leaderboardText = "🏆 **Top Miners Leaderboard**\n\n"
+
+        leaderboard.forEach((entry, index) => {
+          const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`
+          leaderboardText += `${medal} **${entry.username}**\n`
+          leaderboardText += `   💰 ${entry.balance.toFixed(2)} CHARMS | ⛏️ ${entry.totalMined.toFixed(2)} mined\n\n`
+        })
+
+        await interaction.editReply({ content: leaderboardText })
+        break
+      }
+
+      case "airdrop-stats": {
+        const stats = await airdropManager.getUserStats(userId)
+
+        if (!stats) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        const rank = await airdropManager.getUserRank(userId)
+
+        await interaction.editReply({
+          content:
+            `📊 **Your Mining Statistics**\n\n` +
+            `**Overall Performance:**\n` +
+            `• Rank: #${rank}\n` +
+            `• Total Mined: \`${stats.totalMined.toFixed(2)}\` CHARMS\n` +
+            `• Current Balance: \`${stats.balance.toFixed(2)}\` CHARMS\n\n` +
+            `**Mining History:**\n` +
+            `• Mining Sessions: \`${stats.miningSessions}\`\n` +
+            `• Total Claims: \`${stats.totalClaims}\`\n` +
+            `• Best Zero Bits: \`${stats.bestZeroBits}\`\n` +
+            `• Average Reward: \`${stats.averageReward.toFixed(2)}\` CHARMS`,
+        })
+        break
+      }
+    }
+  } catch (error) {
+    console.error("Error handling command:", error)
+
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
+
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: `❌ **Error:** ${errorMessage}`,
+      })
+    } else {
+      await interaction.reply({
+        content: `❌ **Error:** ${errorMessage}`,
+        ephemeral: true,
+      })
+    }
+  }
+})
+
+// Start the bot
+client.login(process.env.DISCORD_TOKEN)

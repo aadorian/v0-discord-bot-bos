@@ -1,0 +1,42 @@
+{
+  "name": "discord-charms-airdrop-bot",
+  "version": "1.0.0",
+  "description": "Discord bot with Charms-style airdrop functionality",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "airdrop",
+    "charms",
+    "mining"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "next": "16.0.10",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.561.0",
+    "tailwind-merge": "3.4.0",
+    "tailwindcss-animate": "1.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.1.18",
+    "postcss": "8.5.6"
+  }
+}
