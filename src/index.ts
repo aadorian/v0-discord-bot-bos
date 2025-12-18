@@ -22,6 +22,16 @@ const commands = [
     .setName("airdrop-start")
     .setDescription("Start the airdrop process - create your wallet and begin mining"),
 
+  new SlashCommandBuilder()
+    .setName("airdrop-import")
+    .setDescription("Import an existing wallet using your 12-word seed phrase")
+    .addStringOption((option) =>
+      option
+        .setName("seedphrase")
+        .setDescription("Your 12-word seed phrase (space-separated)")
+        .setRequired(true),
+    ),
+
   new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
 
   new SlashCommandBuilder()
@@ -79,6 +89,36 @@ client.on("interactionCreate", async (interaction) => {
             `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
             `⚠️ **Keep your seed phrase safe!** Use \`/airdrop-wallet\` to view it privately.`,
         })
+        break
+      }
+
+      case "airdrop-import": {
+        const seedPhrase = interaction.options.getString("seedphrase", true)
+
+        // Delete the command message immediately for security
+        await interaction.deleteReply()
+
+        try {
+          const wallet = await walletManager.importWallet(userId, username, seedPhrase)
+
+          await interaction.followUp({
+            ephemeral: true,
+            content:
+              `✅ **Wallet Imported Successfully!**\n\n` +
+              `📍 **Address:** \`${wallet.address}\`\n\n` +
+              `**Next Steps:**\n` +
+              `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
+              `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
+              `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
+              `🔒 Your seed phrase has been securely imported and stored.`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to import wallet"
+          await interaction.followUp({
+            ephemeral: true,
+            content: `❌ **Import Failed:** ${errorMessage}`,
+          })
+        }
         break
       }
 

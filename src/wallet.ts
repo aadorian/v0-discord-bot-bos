@@ -47,6 +47,34 @@ export class WalletManager {
     return this.db.getWallet(userId)
   }
 
+  async importWallet(userId: string, username: string, seedPhrase: string): Promise<Wallet> {
+    // Check if wallet already exists
+    const existing = await this.db.getWallet(userId)
+    if (existing) {
+      throw new Error("You already have a wallet. Cannot import when a wallet exists.")
+    }
+
+    // Validate seed phrase
+    const normalizedSeedPhrase = seedPhrase.trim().toLowerCase()
+    if (!bip39.validateMnemonic(normalizedSeedPhrase)) {
+      throw new Error("Invalid seed phrase. Please check your 12-word seed phrase and try again.")
+    }
+
+    // Generate keys from the imported seed phrase
+    const { privateKey, address } = this.generateKeysFromSeed(normalizedSeedPhrase)
+
+    const wallet: Wallet = {
+      userId,
+      address,
+      seedPhrase: normalizedSeedPhrase,
+      privateKey,
+      createdAt: new Date(),
+    }
+
+    await this.db.saveWallet(wallet, username)
+    return wallet
+  }
+
   private generateSeedPhrase(): string {
     // Generate a proper BIP39 mnemonic (12 words)
     return bip39.generateMnemonic(128)
