@@ -18,6 +18,32 @@ export interface Wallet {
 export class WalletManager {
   constructor(private db: DatabaseManager) {}
 
+  async getBitcoinBalance(address: string): Promise<{ confirmed: number; unconfirmed: number; total: number }> {
+    try {
+      // Use mempool.space API for testnet4
+      const response = await fetch(`https://mempool.space/testnet4/api/address/${address}`)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch balance: ${response.statusText}`)
+      }
+
+      const data = (await response.json()) as {
+        chain_stats: { funded_txo_sum: number; spent_txo_sum: number }
+        mempool_stats: { funded_txo_sum: number; spent_txo_sum: number }
+      }
+
+      // Convert satoshis to BTC
+      const confirmed = (data.chain_stats.funded_txo_sum - data.chain_stats.spent_txo_sum) / 100000000
+      const unconfirmed = (data.mempool_stats.funded_txo_sum - data.mempool_stats.spent_txo_sum) / 100000000
+      const total = confirmed + unconfirmed
+
+      return { confirmed, unconfirmed, total }
+    } catch (error) {
+      console.error("Error fetching Bitcoin balance:", error)
+      throw new Error("Failed to fetch Bitcoin balance from mempool")
+    }
+  }
+
   async createWallet(userId: string, username: string): Promise<Wallet> {
     // Check if wallet already exists
     const existing = await this.db.getWallet(userId)

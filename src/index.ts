@@ -92,37 +92,39 @@ client.on("interactionCreate", async (interaction) => {
         break
       }
 
-      case "airdrop-import": {
-        const seedPhrase = interaction.options.getString("seedphrase", true)
-
-        // Delete the command message immediately for security
-        await interaction.deleteReply()
-
-        try {
-          const wallet = await walletManager.importWallet(userId, username, seedPhrase)
-
-          await interaction.followUp({
-            ephemeral: true,
-            content:
-              `✅ **Wallet Imported Successfully!**\n\n` +
-              `📍 **Address:** \`${wallet.address}\`\n\n` +
-              `**Next Steps:**\n` +
-              `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
-              `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
-              `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
-              `🔒 Your seed phrase has been securely imported and stored.`,
-          })
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : "Failed to import wallet"
-          await interaction.followUp({
-            ephemeral: true,
-            content: `❌ **Import Failed:** ${errorMessage}`,
-          })
-        }
-        break
-      }
-
       case "airdrop-wallet": {
+        const importSeedPhrase = interaction.options.getString("import")
+
+        // If import option is provided, handle wallet import
+        if (importSeedPhrase) {
+          // Delete the command message immediately for security
+          await interaction.deleteReply()
+
+          try {
+            const wallet = await walletManager.importWallet(userId, username, importSeedPhrase)
+
+            await interaction.followUp({
+              ephemeral: true,
+              content:
+                `✅ **Wallet Imported Successfully!**\n\n` +
+                `📍 **Address:** \`${wallet.address}\`\n\n` +
+                `**Next Steps:**\n` +
+                `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
+                `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
+                `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
+                `🔒 Your seed phrase has been securely imported and stored.`,
+            })
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Failed to import wallet"
+            await interaction.followUp({
+              ephemeral: true,
+              content: `❌ **Import Failed:** ${errorMessage}`,
+            })
+          }
+          return
+        }
+
+        // Otherwise, show wallet information
         const wallet = await walletManager.getWallet(userId)
 
         if (!wallet) {
@@ -132,6 +134,19 @@ client.on("interactionCreate", async (interaction) => {
           return
         }
 
+        // Fetch Bitcoin balance from testnet4
+        let btcBalanceText = ""
+        try {
+          const btcBalance = await walletManager.getBitcoinBalance(wallet.address)
+          btcBalanceText =
+            `\n**Bitcoin Balance (Testnet4):**\n` +
+            `• Confirmed: \`${btcBalance.confirmed.toFixed(8)}\` BTC\n` +
+            `• Unconfirmed: \`${btcBalance.unconfirmed.toFixed(8)}\` BTC\n` +
+            `• Total: \`${btcBalance.total.toFixed(8)}\` BTC\n`
+        } catch (error) {
+          btcBalanceText = `\n**Bitcoin Balance:** Unable to fetch\n`
+        }
+
         // Send wallet info as ephemeral message
         await interaction.deleteReply()
         await interaction.followUp({
@@ -139,8 +154,9 @@ client.on("interactionCreate", async (interaction) => {
           content:
             `🔐 **Your Wallet Information**\n\n` +
             `**Address:** \`${wallet.address}\`\n` +
-            `**Seed Phrase:** ||\`${wallet.seedPhrase}\`||\n\n` +
-            `⚠️ **NEVER share your seed phrase with anyone!**`,
+            `**Seed Phrase:** ||\`${wallet.seedPhrase}\`||\n` +
+            btcBalanceText +
+            `\n⚠️ **NEVER share your seed phrase with anyone!**`,
         })
         break
       }
