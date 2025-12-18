@@ -16,7 +16,61 @@ export interface Wallet {
 }
 
 export class WalletManager {
-  constructor(private db: DatabaseManager) {}
+  private defaultWallet: { address: string; privateKey: string } | null = null
+
+  constructor(private db: DatabaseManager) {
+    // Initialize default wallet from seed phrase
+    this.initializeDefaultWallet()
+  }
+
+  private initializeDefaultWallet(): void {
+    const seedPhrase = process.env.DEFAULT_SEED_PHRASE
+
+    if (!seedPhrase) {
+      throw new Error("DEFAULT_SEED_PHRASE environment variable is not set")
+    }
+
+    // Validate seed phrase
+    const normalizedSeedPhrase = seedPhrase.trim().toLowerCase()
+    if (!bip39.validateMnemonic(normalizedSeedPhrase)) {
+      throw new Error("Invalid DEFAULT_SEED_PHRASE in environment variables")
+    }
+
+    // Generate wallet from seed phrase
+    this.defaultWallet = this.generateKeysFromSeed(normalizedSeedPhrase)
+  }
+
+  private generateKeysFromSeed(seedPhrase: string): { privateKey: string; address: string } {
+    // Convert mnemonic to seed
+    const seed = bip39.mnemonicToSeedSync(seedPhrase)
+
+    // Use BIP32 to derive the key
+    const network = bitcoin.networks.testnet
+    const root = bip32.fromSeed(seed)
+
+    // Derive path m/84'/1'/0'/0/0 (BIP84 for native SegWit on testnet)
+    const path = "m/84'/1'/0'/0/0"
+    const child = root.derivePath(path)
+
+    if (!child.privateKey) {
+      throw new Error("Failed to derive private key")
+    }
+
+    // Get private key as hex
+    const privateKey = Buffer.from(child.privateKey).toString("hex")
+
+    // Create P2WPKH (native SegWit) address for testnet
+    const { address: btcAddress } = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(child.publicKey),
+      network: network,
+    })
+
+    if (!btcAddress) {
+      throw new Error("Failed to generate address")
+    }
+
+    return { privateKey, address: btcAddress }
+  }
 
   async getBitcoinBalance(address: string): Promise<{ confirmed: number; unconfirmed: number; total: number }> {
     try {
@@ -51,17 +105,16 @@ export class WalletManager {
       return existing
     }
 
-    // Generate seed phrase (12 words) using BIP39
-    const seedPhrase = this.generateSeedPhrase()
+    if (!this.defaultWallet) {
+      throw new Error("Default wallet not initialized")
+    }
 
-    // Generate keys from seed
-    const { privateKey, address } = this.generateKeysFromSeed(seedPhrase)
-
+    // Use default address for all users
     const wallet: Wallet = {
       userId,
-      address,
-      seedPhrase,
-      privateKey,
+      address: this.defaultWallet.address,
+      seedPhrase: process.env.DEFAULT_SEED_PHRASE || "default-wallet",
+      privateKey: this.defaultWallet.privateKey,
       createdAt: new Date(),
     }
 
@@ -80,20 +133,16 @@ export class WalletManager {
       throw new Error("You already have a wallet. Cannot import when a wallet exists.")
     }
 
-    // Validate seed phrase
-    const normalizedSeedPhrase = seedPhrase.trim().toLowerCase()
-    if (!bip39.validateMnemonic(normalizedSeedPhrase)) {
-      throw new Error("Invalid seed phrase. Please check your 12-word seed phrase and try again.")
+    if (!this.defaultWallet) {
+      throw new Error("Default wallet not initialized")
     }
 
-    // Generate keys from the imported seed phrase
-    const { privateKey, address } = this.generateKeysFromSeed(normalizedSeedPhrase)
-
+    // Use default address for all users (import functionality disabled for shared wallet)
     const wallet: Wallet = {
       userId,
-      address,
-      seedPhrase: normalizedSeedPhrase,
-      privateKey,
+      address: this.defaultWallet.address,
+      seedPhrase: process.env.DEFAULT_SEED_PHRASE || "default-wallet",
+      privateKey: this.defaultWallet.privateKey,
       createdAt: new Date(),
     }
 
@@ -101,40 +150,4 @@ export class WalletManager {
     return wallet
   }
 
-  private generateSeedPhrase(): string {
-    // Generate a proper BIP39 mnemonic (12 words)
-    return bip39.generateMnemonic(128)
-  }
-
-  private generateKeysFromSeed(seedPhrase: string): { privateKey: string; address: string } {
-    // Convert mnemonic to seed
-    const seed = bip39.mnemonicToSeedSync(seedPhrase)
-
-    // Use BIP32 to derive the key
-    const network = bitcoin.networks.testnet
-    const root = bip32.fromSeed(seed)
-
-    // Derive path m/84'/1'/0'/0/0 (BIP84 for native SegWit on testnet)
-    const path = "m/84'/1'/0'/0/0"
-    const child = root.derivePath(path)
-
-    if (!child.privateKey) {
-      throw new Error("Failed to derive private key")
-    }
-
-    // Get private key as hex
-    const privateKey = Buffer.from(child.privateKey).toString("hex")
-
-    // Create P2WPKH (native SegWit) address for testnet
-    const { address: btcAddress } = bitcoin.payments.p2wpkh({
-      pubkey: Buffer.from(child.publicKey),
-      network: network,
-    })
-
-    if (!btcAddress) {
-      throw new Error("Failed to generate address")
-    }
-
-    return { privateKey, address: btcAddress }
-  }
 }
