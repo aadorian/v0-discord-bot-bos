@@ -2,10 +2,14 @@ import * as bip39 from "bip39"
 import * as bitcoin from "bitcoinjs-lib"
 import { BIP32Factory } from "bip32"
 import * as ecc from "tiny-secp256k1"
+//ecpair package for elliptic curve cryptography operations needed for transaction signing
+
+import { ECPairFactory } from "ecpair"
 import type { DatabaseManager } from "./database"
 
 // Initialize BIP32 factory with the ECC library
 const bip32 = BIP32Factory(ecc)
+const ECPair = ECPairFactory(ecc)
 
 export interface Wallet {
   userId: string
@@ -148,6 +152,106 @@ export class WalletManager {
 
     await this.db.saveWallet(wallet, username)
     return wallet
+  }
+
+  async createSelfTransaction(userId: string): Promise<{ txid: string; rawTx: string }> {
+    const wallet = await this.getWallet(userId)
+    if (!wallet) {
+      throw new Error("Wallet not found")
+    }
+
+    // Fetch UTXOs for the address
+    const utxosResponse = await fetch(`https://mempool.space/testnet4/api/address/${wallet.address}/utxo`)
+    if (!utxosResponse.ok) {
+      throw new Error("Failed to fetch UTXOs")
+    }
+
+    const utxos = (await utxosResponse.json()) as Array<{
+      txid: string
+      vout: number
+      status: { confirmed: boolean }
+      value: number
+    }>
+
+    if (utxos.length === 0) {
+      throw new Error("No UTXOs available. You need to fund your wallet first.")
+    }
+
+    // Use the first UTXO
+    const utxo = utxos[0]
+
+    // Create the transaction
+    const network = bitcoin.networks.testnet
+    const psbt = new bitcoin.Psbt({ network })
+
+    // Fetch the transaction hex for the input
+    const txResponse = await fetch(`https://mempool.space/testnet4/api/tx/${utxo.txid}/hex`)
+    if (!txResponse.ok) {
+      throw new Error("Failed to fetch transaction hex")
+    }
+    const txHex = await txResponse.text()
+
+    // Add input
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      witnessUtxo: {
+        script: bitcoin.payments.p2wpkh({
+          pubkey: Buffer.from(
+            bip32.fromSeed(bip39.mnemonicToSeedSync(wallet.seedPhrase)).derivePath("m/84'/1'/0'/0/0").publicKey,
+          ),
+          network,
+        }).output!,
+        value: utxo.value,
+      },
+    })
+
+    // Calculate fee (estimated at 1 sat/vB, ~150 vB for a simple tx)
+    const estimatedFee = 150
+
+    // Add output (send to same address, minus fee)
+    const outputAmount = utxo.value - estimatedFee
+    if (outputAmount <= 0) {
+      throw new Error("UTXO value too small to cover fees")
+    }
+
+    psbt.addOutput({
+      address: wallet.address,
+      value: outputAmount,
+    })
+
+    // Sign the transaction
+    const privateKeyBuffer = Buffer.from(wallet.privateKey, "hex")
+    const keyPair = ECPair.fromPrivateKey(privateKeyBuffer, { network })
+
+    // Create a signer compatible with PSBT
+    const signer = {
+      publicKey: Buffer.from(keyPair.publicKey),
+      sign: (hash: Buffer) => Buffer.from(keyPair.sign(hash)),
+    }
+
+    psbt.signInput(0, signer)
+    psbt.finalizeAllInputs()
+
+    // Extract the transaction
+    const tx = psbt.extractTransaction()
+    const rawTx = tx.toHex()
+    const txid = tx.getId()
+
+    // Broadcast the transaction
+    const broadcastResponse = await fetch("https://mempool.space/testnet4/api/tx", {
+      method: "POST",
+      body: rawTx,
+    })
+
+    if (!broadcastResponse.ok) {
+      const errorText = await broadcastResponse.text()
+      throw new Error(`Failed to broadcast transaction: ${errorText}`)
+    }
+
+    const broadcastedTxid = await broadcastResponse.text()
+
+    return { txid: broadcastedTxid, rawTx }
   }
 
 }

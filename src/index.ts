@@ -20,11 +20,11 @@ const airdropManager = new AirdropManager(db, walletManager)
 const commands = [
   new SlashCommandBuilder()
     .setName("airdrop-start")
-    .setDescription("Start the airdrop process - create your wallet and begin mining"),
+    .setDescription("BOS: Start the airdrop process - create your wallet and begin mining"),
 
   new SlashCommandBuilder()
     .setName("airdrop-import")
-    .setDescription("Import an existing wallet using your 12-word seed phrase")
+    .setDescription("BOS: Import an existing wallet using your 12-word seed phrase")
     .addStringOption((option) =>
       option
         .setName("seedphrase")
@@ -36,7 +36,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("airdrop-mine")
-    .setDescription("Start mining tokens")
+    .setDescription("BOS: Start mining tokens")
     .addIntegerOption((option) =>
       option.setName("duration").setDescription("Mining duration in seconds (default: 60)").setRequired(false),
     ),
@@ -52,13 +52,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName("btc-info")
     .setDescription("Display Bitcoin technical data structures and types"),
+
+  new SlashCommandBuilder()
+    .setName("airdrop-myself")
+    .setDescription("Send a Bitcoin transaction from your address to itself"),
 ].map((command) => command.toJSON())
 
 // Register slash commands
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN!)
 
 client.once("ready", async () => {
-  console.log(`✅ Bot is ready! Logged in as ${client.user?.tag}`)
+  console.log(`✅ BOT Bot is ready! Logged in as ${client.user?.tag}`)
 
   try {
     console.log("🔄 Refreshing application commands...")
@@ -349,6 +353,42 @@ client.on("interactionCreate", async (interaction) => {
             `📍 **Your Address:** \`${wallet.address}\`\n` +
             `🌐 **Network:** Bitcoin Testnet4`,
         })
+        break
+      }
+
+      case "airdrop-myself": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        await interaction.editReply({
+          content: `🔄 **Creating Transaction...**\n\nFetching UTXOs and building transaction...`,
+        })
+
+        try {
+          const result = await walletManager.createSelfTransaction(userId)
+
+          await interaction.editReply({
+            content:
+              `✅ **Transaction Sent Successfully!**\n\n` +
+              `📍 **From:** \`${wallet.address}\`\n` +
+              `📍 **To:** \`${wallet.address}\`\n` +
+              `🔗 **Transaction ID:** \`${result.txid}\`\n\n` +
+              `🌐 **View on Explorer:**\n` +
+              `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
+              `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Transaction Failed**\n\n${errorMessage}`,
+          })
+        }
         break
       }
     }
