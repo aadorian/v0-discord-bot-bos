@@ -61,7 +61,7 @@ const commands = [
 // Register slash commands
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN!)
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`✅ BOT Bot is ready! Logged in as ${client.user?.tag}`)
 
   try {
