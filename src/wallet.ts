@@ -254,4 +254,148 @@ export class WalletManager {
     return { txid: broadcastedTxid, rawTx }
   }
 
+  async createTransaction(
+    userId: string,
+    recipientAddress: string,
+    amount: number | null,
+  ): Promise<{ txid: string; rawTx: string; sentAmount: number; fee: number }> {
+    const wallet = await this.getWallet(userId)
+    if (!wallet) {
+      throw new Error("Wallet not found")
+    }
+
+    // Validate recipient address
+    try {
+      bitcoin.address.toOutputScript(recipientAddress, bitcoin.networks.testnet)
+    } catch (error) {
+      throw new Error("Invalid recipient address for testnet")
+    }
+
+    // Fetch UTXOs for the address
+    const utxosResponse = await fetch(`https://mempool.space/testnet4/api/address/${wallet.address}/utxo`)
+    if (!utxosResponse.ok) {
+      throw new Error("Failed to fetch UTXOs")
+    }
+
+    const utxos = (await utxosResponse.json()) as Array<{
+      txid: string
+      vout: number
+      status: { confirmed: boolean }
+      value: number
+    }>
+
+    if (utxos.length === 0) {
+      throw new Error("No UTXOs available. You need to fund your wallet first.")
+    }
+
+    // Calculate total available balance
+    const totalBalance = utxos.reduce((sum, utxo) => sum + utxo.value, 0)
+
+    // Estimate fee (roughly 150 bytes for 1 input, 2 outputs)
+    const estimatedFee = 200 // satoshis
+
+    // Determine the amount to send
+    let sendAmount: number
+    if (amount !== null) {
+      // User specified an amount
+      if (amount < 546) {
+        throw new Error("Amount must be at least 546 satoshis (dust limit)")
+      }
+      if (amount + estimatedFee > totalBalance) {
+        throw new Error(
+          `Insufficient balance. Available: ${totalBalance} sats, Requested: ${amount} sats + ${estimatedFee} sats fee`,
+        )
+      }
+      sendAmount = amount
+    } else {
+      // Send maximum (all UTXOs minus fee)
+      sendAmount = totalBalance - estimatedFee
+      if (sendAmount < 546) {
+        throw new Error("Balance too low to send transaction after fees")
+      }
+    }
+
+    // Create the transaction
+    const network = bitcoin.networks.testnet
+    const psbt = new bitcoin.Psbt({ network })
+
+    // Add all UTXOs as inputs
+    for (const utxo of utxos) {
+      psbt.addInput({
+        hash: utxo.txid,
+        index: utxo.vout,
+        witnessUtxo: {
+          script: bitcoin.payments.p2wpkh({
+            pubkey: Buffer.from(
+              bip32.fromSeed(bip39.mnemonicToSeedSync(wallet.seedPhrase)).derivePath("m/84'/1'/0'/0/0").publicKey,
+            ),
+            network,
+          }).output!,
+          value: utxo.value,
+        },
+      })
+    }
+
+    // Add output to recipient
+    psbt.addOutput({
+      address: recipientAddress,
+      value: sendAmount,
+    })
+
+    // Add change output if needed
+    const changeAmount = totalBalance - sendAmount - estimatedFee
+    if (changeAmount >= 546) {
+      // Only add change if it's above dust limit
+      psbt.addOutput({
+        address: wallet.address,
+        value: changeAmount,
+      })
+    }
+
+    // Calculate actual fee
+    const actualFee = totalBalance - sendAmount - (changeAmount >= 546 ? changeAmount : 0)
+
+    // Sign all inputs
+    const privateKeyBuffer = Buffer.from(wallet.privateKey, "hex")
+    const keyPair = ECPair.fromPrivateKey(privateKeyBuffer, { network })
+
+    // Create a signer compatible with PSBT
+    const signer = {
+      publicKey: Buffer.from(keyPair.publicKey),
+      sign: (hash: Buffer) => Buffer.from(keyPair.sign(hash)),
+    }
+
+    // Sign each input
+    for (let i = 0; i < utxos.length; i++) {
+      psbt.signInput(i, signer)
+    }
+
+    psbt.finalizeAllInputs()
+
+    // Extract the transaction
+    const tx = psbt.extractTransaction()
+    const rawTx = tx.toHex()
+    const txid = tx.getId()
+
+    // Broadcast the transaction
+    const broadcastResponse = await fetch("https://mempool.space/testnet4/api/tx", {
+      method: "POST",
+      body: rawTx,
+    })
+
+    if (!broadcastResponse.ok) {
+      const errorText = await broadcastResponse.text()
+      throw new Error(`Failed to broadcast transaction: ${errorText}`)
+    }
+
+    const broadcastedTxid = await broadcastResponse.text()
+
+    return {
+      txid: broadcastedTxid,
+      rawTx,
+      sentAmount: sendAmount,
+      fee: actualFee,
+    }
+  }
+
 }

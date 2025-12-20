@@ -56,6 +56,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName("airdrop-myself")
     .setDescription("Send a Bitcoin transaction from your address to itself"),
+
+  new SlashCommandBuilder()
+    .setName("airdrop-send")
+    .setDescription("Send Bitcoin to another address on testnet4")
+    .addStringOption((option) =>
+      option
+        .setName("address")
+        .setDescription("Recipient address (default: tb1pyry0g642yr7qlhe82qd342lr0aztywhth62lnjttxgks8wmgsc9svf9xx2)")
+        .setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("Amount to send in satoshis (leave empty to send max minus fees)")
+        .setRequired(false)
+        .setMinValue(546),
+    ),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -378,6 +395,49 @@ client.on("interactionCreate", async (interaction) => {
               `✅ **Transaction Sent Successfully!**\n\n` +
               `📍 **From:** \`${wallet.address}\`\n` +
               `📍 **To:** \`${wallet.address}\`\n` +
+              `🔗 **Transaction ID:** \`${result.txid}\`\n\n` +
+              `🌐 **View on Explorer:**\n` +
+              `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
+              `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Transaction Failed**\n\n${errorMessage}`,
+          })
+        }
+        break
+      }
+
+      case "airdrop-send": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        // Get options with default recipient address
+        const recipientAddress =
+          interaction.options.getString("address") || "tb1pyry0g642yr7qlhe82qd342lr0aztywhth62lnjttxgks8wmgsc9svf9xx2"
+        const amount = interaction.options.getInteger("amount") || null
+
+        await interaction.editReply({
+          content: `🔄 **Creating Transaction...**\n\nFetching UTXOs and building transaction...`,
+        })
+
+        try {
+          const result = await walletManager.createTransaction(userId, recipientAddress, amount)
+
+          await interaction.editReply({
+            content:
+              `✅ **Transaction Sent Successfully!**\n\n` +
+              `📍 **From:** \`${wallet.address}\`\n` +
+              `📍 **To:** \`${recipientAddress}\`\n` +
+              `💰 **Amount:** \`${result.sentAmount}\` satoshis (${(result.sentAmount / 100000000).toFixed(8)} BTC)\n` +
+              `⚡ **Fee:** \`${result.fee}\` satoshis\n` +
               `🔗 **Transaction ID:** \`${result.txid}\`\n\n` +
               `🌐 **View on Explorer:**\n` +
               `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
