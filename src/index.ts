@@ -73,6 +73,51 @@ const commands = [
         .setRequired(false)
         .setMinValue(546),
     ),
+
+  new SlashCommandBuilder()
+    .setName("sendto")
+    .setDescription("Send Bitcoin transaction (like bitcoin-cli sendtoaddress)")
+    .addStringOption((option) =>
+      option
+        .setName("address")
+        .setDescription("Recipient Bitcoin address")
+        .setRequired(true),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("Amount to send in satoshis (leave empty to send max minus fees)")
+        .setRequired(false)
+        .setMinValue(546),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("query-tokens")
+    .setDescription("Query token information using app identity and UTXOs")
+    .addStringOption((option) =>
+      option
+        .setName("app_id")
+        .setDescription("App identity (from original witness UTXO)")
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("app_vk")
+        .setDescription("App verification key")
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("token_utxo")
+        .setDescription("Token UTXO (format: txid:vout)")
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("witness_utxo")
+        .setDescription("Original witness UTXO (format: txid:vout)")
+        .setRequired(false),
+    ),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -447,6 +492,118 @@ client.on("interactionCreate", async (interaction) => {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
           await interaction.editReply({
             content: `❌ **Transaction Failed**\n\n${errorMessage}`,
+          })
+        }
+        break
+      }
+
+      case "sendto": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        // Get options - address is required for sendto
+        const recipientAddress = interaction.options.getString("address")
+        if (!recipientAddress) {
+          await interaction.editReply({
+            content: "❌ Recipient address is required. Usage: `/sendto address:<address> [amount:<satoshis>]`",
+          })
+          return
+        }
+
+        const amount = interaction.options.getInteger("amount") || null
+
+        await interaction.editReply({
+          content: `🔄 **Creating Transaction...**\n\nFetching UTXOs and building transaction...`,
+        })
+
+        try {
+          const result = await walletManager.createTransaction(userId, recipientAddress, amount)
+
+          await interaction.editReply({
+            content:
+              `✅ **Transaction Sent Successfully!**\n\n` +
+              `📍 **From:** \`${wallet.address}\`\n` +
+              `📍 **To:** \`${recipientAddress}\`\n` +
+              `💰 **Amount:** \`${result.sentAmount}\` satoshis (${(result.sentAmount / 100000000).toFixed(8)} BTC)\n` +
+              `⚡ **Fee:** \`${result.fee}\` satoshis\n` +
+              `🔗 **Transaction ID:** \`${result.txid}\`\n\n` +
+              `🌐 **View on Explorer:**\n` +
+              `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
+              `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Transaction Failed**\n\n${errorMessage}`,
+          })
+        }
+        break
+      }
+
+      case "query-tokens": {
+        await interaction.editReply({
+          content: `🔄 **Querying Token Information...**\n\nFetching token data from blockchain...`,
+        })
+
+        try {
+          const appId = interaction.options.getString("app_id") || undefined
+          const appVk = interaction.options.getString("app_vk") || undefined
+          const tokenUtxo = interaction.options.getString("token_utxo") || undefined
+          const witnessUtxo = interaction.options.getString("witness_utxo") || undefined
+
+          const result = await walletManager.queryTokens(appId, appVk, tokenUtxo, witnessUtxo)
+
+          // Parse UTXO information
+          const [tokenTxid, tokenVout] = result.tokenUtxo.split(":")
+          const [witnessTxid, witnessVout] = result.witnessUtxo.split(":")
+
+          let tokenDetails = ""
+          if (result.tokenInfo) {
+            const tokenTx = result.tokenInfo as any
+            tokenDetails = `**Token UTXO Transaction:**\n` +
+              `• TXID: \`${tokenTxid}\`\n` +
+              `• Vout: \`${tokenVout}\`\n` +
+              `• Status: ${tokenTx.status?.confirmed ? "✅ Confirmed" : "⏳ Unconfirmed"}\n` +
+              `• Size: \`${tokenTx.size || "N/A"}\` bytes\n` +
+              `• Weight: \`${tokenTx.weight || "N/A"}\`\n\n`
+          }
+
+          let witnessDetails = ""
+          if (result.utxoData) {
+            const witnessTx = result.utxoData as any
+            witnessDetails = `**Witness UTXO Transaction:**\n` +
+              `• TXID: \`${witnessTxid}\`\n` +
+              `• Vout: \`${witnessVout}\`\n` +
+              `• Status: ${witnessTx.status?.confirmed ? "✅ Confirmed" : "⏳ Unconfirmed"}\n` +
+              `• Size: \`${witnessTx.size || "N/A"}\` bytes\n` +
+              `• Weight: \`${witnessTx.weight || "N/A"}\`\n\n`
+          }
+
+          await interaction.editReply({
+            content:
+              `🔍 **Token Query Results**\n\n` +
+              `**App Identity:**\n` +
+              `• App ID: \`${result.appId}\`\n` +
+              `• App Verification Key: \`${result.appVk}\`\n\n` +
+              tokenDetails +
+              witnessDetails +
+              `**UTXO References:**\n` +
+              `• Token UTXO: \`${result.tokenUtxo}\`\n` +
+              `• Witness UTXO: \`${result.witnessUtxo}\`\n\n` +
+              `🌐 **View on Explorer:**\n` +
+              `• Token TX: https://mempool.space/testnet4/tx/${tokenTxid}\n` +
+              `• Witness TX: https://mempool.space/testnet4/tx/${witnessTxid}`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Query Failed**\n\n${errorMessage}`,
           })
         }
         break

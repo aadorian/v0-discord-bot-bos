@@ -398,4 +398,62 @@ export class WalletManager {
     }
   }
 
+  async queryTokens(
+    appId?: string,
+    appVk?: string,
+    tokenUtxo?: string,
+    witnessUtxo?: string,
+  ): Promise<{
+    appId: string
+    appVk: string
+    tokenUtxo: string
+    witnessUtxo: string
+    tokenInfo?: any
+    utxoData?: any
+  }> {
+    // Default values from provided info
+    const defaultAppId = "2ed3939eceafa9cdd5495e224c64f20b17e517bb7629153f1d5b5b0e3e87d2f5"
+    const defaultAppVk = "175affa66db36da14c819c6e7396e5bc21d5315a878b4f6800f980e646c9e649"
+    const defaultTokenUtxo = "d8786af1e7e597d77c073905fd6fd7053e4d12894eefa19c5deb45842fc2a8a2:0"
+    const defaultWitnessUtxo = "f62d75e7c52c1929c63033b797947d8af0f4e720cc5d67be5198e24491818941:0"
+
+    const finalAppId = appId || defaultAppId
+    const finalAppVk = appVk || defaultAppVk
+    const finalTokenUtxo = tokenUtxo || defaultTokenUtxo
+    const finalWitnessUtxo = witnessUtxo || defaultWitnessUtxo
+
+    // Parse UTXO (format: txid:vout)
+    const [tokenTxid, tokenVout] = finalTokenUtxo.split(":")
+    const [witnessTxid, witnessVout] = finalWitnessUtxo.split(":")
+
+    // Query UTXO information from mempool
+    let tokenInfo = null
+    let utxoData = null
+
+    try {
+      // Query token UTXO
+      const tokenUtxoResponse = await fetch(`https://mempool.space/testnet4/api/tx/${tokenTxid}`)
+      if (tokenUtxoResponse.ok) {
+        tokenInfo = await tokenUtxoResponse.json()
+      }
+
+      // Query witness UTXO
+      const witnessUtxoResponse = await fetch(`https://mempool.space/testnet4/api/tx/${witnessTxid}`)
+      if (witnessUtxoResponse.ok) {
+        utxoData = await witnessUtxoResponse.json()
+      }
+    } catch (error) {
+      console.error("Error querying UTXO data:", error)
+    }
+
+    return {
+      appId: finalAppId,
+      appVk: finalAppVk,
+      tokenUtxo: finalTokenUtxo,
+      witnessUtxo: finalWitnessUtxo,
+      tokenInfo,
+      utxoData,
+    }
+  }
+
 }
