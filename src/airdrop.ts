@@ -47,7 +47,7 @@ export class AirdropManager {
     if (pendingReward <= 0) {
       return {
         success: false,
-        message: "No tokens to claim. Mine first using `/airdrop-mine`.",
+        message: "No tokens to claim.",
       }
     }
 

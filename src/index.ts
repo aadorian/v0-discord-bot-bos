@@ -24,20 +24,7 @@ const commands = [
 
   new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
 
-  new SlashCommandBuilder()
-    .setName("airdrop-mine")
-    .setDescription("BOS: Start mining tokens")
-    .addIntegerOption((option) =>
-      option.setName("duration").setDescription("Mining duration in seconds (default: 60)").setRequired(false),
-    ),
-
-  new SlashCommandBuilder().setName("airdrop-claim").setDescription("Claim your mined tokens"),
-
   new SlashCommandBuilder().setName("airdrop-balance").setDescription("Check your token balance"),
-
-  new SlashCommandBuilder().setName("airdrop-leaderboard").setDescription("View the top miners"),
-
-  new SlashCommandBuilder().setName("airdrop-stats").setDescription("View your mining statistics"),
 
   new SlashCommandBuilder()
     .setName("btc-info")
@@ -156,9 +143,7 @@ client.on("interactionCreate", async (interaction) => {
             `✅ Your wallet has been created!\n` +
             `📍 **Address:** \`${wallet.address}\`\n\n` +
             `**Next Steps:**\n` +
-            `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
-            `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
-            `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
+            `1️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
             `⚠️ **Keep your seed phrase safe!** Use \`/airdrop-wallet\` to view it privately.`,
         })
         break
@@ -202,80 +187,6 @@ client.on("interactionCreate", async (interaction) => {
         break
       }
 
-      case "airdrop-mine": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
-
-        const duration = interaction.options.getInteger("duration") || 60
-
-        if (duration < 10 || duration > 300) {
-          await interaction.editReply({
-            content: "❌ Mining duration must be between 10 and 300 seconds.",
-          })
-          return
-        }
-
-        await interaction.editReply({
-          content:
-            `⛏️ **Mining Started!**\n\n` +
-            `Finding the hash with maximum leading zero bits...\n` +
-            `Duration: ${duration} seconds\n\n` +
-            `🔄 Mining in progress...`,
-        })
-
-        const result = await miningManager.mine(userId, duration)
-
-        await interaction.followUp({
-          content:
-            `✅ **Mining Complete!**\n\n` +
-            `🏆 **Best Hash Found:**\n` +
-            `\`${result.hash}\`\n\n` +
-            `📊 **Mining Stats:**\n` +
-            `• Nonce: \`${result.nonce}\`\n` +
-            `• Zero Bits: \`${result.zeroBits}\`\n` +
-            `• Attempts: \`${result.attempts.toLocaleString()}\`\n\n` +
-            `💰 **Estimated Reward:** \`${result.reward.toFixed(2)}\` CHARMS\n\n` +
-            `Use \`/airdrop-claim\` to claim your tokens!`,
-        })
-        break
-      }
-
-      case "airdrop-claim": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
-
-        const claim = await airdropManager.claimTokens(userId)
-
-        if (!claim.success) {
-          await interaction.editReply({
-            content: `❌ ${claim.message}`,
-          })
-          return
-        }
-
-        await interaction.editReply({
-          content:
-            `🎉 **Tokens Claimed Successfully!**\n\n` +
-            `💰 **Amount:** \`${claim.amount!.toFixed(2)}\` CHARMS\n` +
-            `📊 **New Balance:** \`${claim.newBalance!.toFixed(2)}\` CHARMS\n` +
-            `🔗 **Transaction ID:** \`${claim.txId}\`\n\n` +
-            `Congratulations! Your tokens have been added to your wallet.`,
-        })
-        break
-      }
-
       case "airdrop-balance": {
         const balance = await airdropManager.getBalance(userId)
 
@@ -297,56 +208,6 @@ client.on("interactionCreate", async (interaction) => {
             `• Total Claims: \`${stats.totalClaims}\`\n` +
             `• Mining Sessions: \`${stats.miningSessions}\`\n` +
             `• Best Zero Bits: \`${stats.bestZeroBits}\``,
-        })
-        break
-      }
-
-      case "airdrop-leaderboard": {
-        const leaderboard = await airdropManager.getLeaderboard(10)
-
-        if (leaderboard.length === 0) {
-          await interaction.editReply({
-            content: "📊 No one has started mining yet! Be the first!",
-          })
-          return
-        }
-
-        let leaderboardText = "🏆 **Top Miners Leaderboard**\n\n"
-
-        leaderboard.forEach((entry, index) => {
-          const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`
-          leaderboardText += `${medal} **${entry.username}**\n`
-          leaderboardText += `   💰 ${entry.balance.toFixed(2)} CHARMS | ⛏️ ${entry.totalMined.toFixed(2)} mined\n\n`
-        })
-
-        await interaction.editReply({ content: leaderboardText })
-        break
-      }
-
-      case "airdrop-stats": {
-        const stats = await airdropManager.getUserStats(userId)
-
-        if (!stats) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
-
-        const rank = await airdropManager.getUserRank(userId)
-
-        await interaction.editReply({
-          content:
-            `📊 **Your Mining Statistics**\n\n` +
-            `**Overall Performance:**\n` +
-            `• Rank: #${rank}\n` +
-            `• Total Mined: \`${stats.totalMined.toFixed(2)}\` CHARMS\n` +
-            `• Current Balance: \`${stats.balance.toFixed(2)}\` CHARMS\n\n` +
-            `**Mining History:**\n` +
-            `• Mining Sessions: \`${stats.miningSessions}\`\n` +
-            `• Total Claims: \`${stats.totalClaims}\`\n` +
-            `• Best Zero Bits: \`${stats.bestZeroBits}\`\n` +
-            `• Average Reward: \`${stats.averageReward.toFixed(2)}\` CHARMS`,
         })
         break
       }
