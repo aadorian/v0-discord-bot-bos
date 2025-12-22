@@ -540,4 +540,151 @@ export class WalletManager {
     }
   }
 
+  async getTransactionRawData(txid: string): Promise<{
+    txid: string
+    rawHex: string
+    transaction: any
+    spell?: any
+    inputs: Array<{
+      txid: string
+      vout: number
+      scriptSig?: string
+      witness?: string[]
+      sequence: number
+    }>
+    outputs: Array<{
+      value: number
+      scriptPubKey: string
+      address?: string
+      opReturn?: string
+    }>
+    size: number
+    weight: number
+    fee?: number
+    status?: any
+  }> {
+    try {
+      // Fetch raw transaction hex
+      const hexResponse = await fetch(`https://mempool.space/testnet4/api/tx/${txid}/hex`)
+      if (!hexResponse.ok) {
+        throw new Error(`Failed to fetch transaction hex: ${hexResponse.statusText}`)
+      }
+      const rawHex = await hexResponse.text()
+
+      // Fetch transaction details
+      const txResponse = await fetch(`https://mempool.space/testnet4/api/tx/${txid}`)
+      if (!txResponse.ok) {
+        throw new Error(`Failed to fetch transaction details: ${txResponse.statusText}`)
+      }
+      const txData = await txResponse.json()
+
+      // Parse the raw transaction using bitcoinjs-lib
+      const network = bitcoin.networks.testnet
+      const tx = bitcoin.Transaction.fromHex(rawHex)
+
+      // Extract inputs
+      const inputs = tx.ins.map((input, index) => {
+        const witness = tx.witness && tx.witness[index] ? tx.witness[index].map(w => w.toString('hex')) : undefined
+        return {
+          txid: Buffer.from(input.hash).reverse().toString('hex'),
+          vout: input.index,
+          scriptSig: input.script.length > 0 ? input.script.toString('hex') : undefined,
+          witness,
+          sequence: input.sequence,
+        }
+      })
+
+      // Extract outputs and look for OP_RETURN (spell data)
+      const outputs = tx.outs.map((output, index) => {
+        const script = output.script
+        const scriptHex = script.toString('hex')
+        
+        // Check for OP_RETURN (0x6a)
+        let opReturn: string | undefined
+        if (script[0] === 0x6a) {
+          // OP_RETURN found, extract the data
+          const data = script.slice(1)
+          opReturn = data.toString('hex')
+          
+          // Try to parse as UTF-8 string (spell JSON)
+          try {
+            const text = data.toString('utf8')
+            if (text.startsWith('{') || text.startsWith('[')) {
+              opReturn = text
+            }
+          } catch (e) {
+            // Not valid UTF-8, keep as hex
+          }
+        }
+
+        // Try to decode address from script
+        let address: string | undefined
+        try {
+          address = bitcoin.address.fromOutputScript(script, network)
+        } catch (e) {
+          // Script doesn't represent a standard address
+        }
+
+        return {
+          value: output.value,
+          scriptPubKey: scriptHex,
+          address,
+          opReturn,
+        }
+      })
+
+      // Try to parse spell from OP_RETURN outputs
+      let spell: any | undefined
+      for (const output of outputs) {
+        if (output.opReturn && output.opReturn.startsWith('{')) {
+          try {
+            spell = JSON.parse(output.opReturn)
+            break
+          } catch (e) {
+            // Not valid JSON
+          }
+        }
+      }
+
+      // Also check witness data for spell (charms.dev may embed spells in witness)
+      if (!spell && tx.witness) {
+        for (const witnessStack of tx.witness) {
+          for (const witnessItem of witnessStack) {
+            try {
+              const text = witnessItem.toString('utf8')
+              if (text.startsWith('{') && (text.includes('"version"') || text.includes('"apps"') || text.includes('"ins"') || text.includes('"outs"'))) {
+                spell = JSON.parse(text)
+                break
+              }
+            } catch (e) {
+              // Not valid JSON
+            }
+          }
+          if (spell) break
+        }
+      }
+
+      // Calculate size if not provided by API
+      const txSize = txData.size || Buffer.from(rawHex, 'hex').length
+      // Use weight from API, or estimate (weight ≈ size * 4 for non-SegWit, or use virtual size calculation)
+      const txWeight = txData.weight || (txSize * 4)
+
+      return {
+        txid,
+        rawHex,
+        transaction: txData,
+        spell,
+        inputs,
+        outputs,
+        size: txSize,
+        weight: txWeight,
+        fee: txData.fee,
+        status: txData.status,
+      }
+    } catch (error) {
+      console.error("Error fetching transaction raw data:", error)
+      throw new Error(`Failed to fetch transaction raw data: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
 }

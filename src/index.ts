@@ -107,6 +107,16 @@ const commands = [
         .setMinValue(1)
         .setMaxValue(20),
     ),
+
+  new SlashCommandBuilder()
+    .setName("tx-raw")
+    .setDescription("Get raw transaction data and parse charms.dev Token Standard spell")
+    .addStringOption((option) =>
+      option
+        .setName("txid")
+        .setDescription("Transaction ID (default: d8786af1e7e597d77c073905fd6fd7053e4d12894eefa19c5deb45842fc2a8a2)")
+        .setRequired(false),
+    ),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -495,6 +505,94 @@ client.on("interactionCreate", async (interaction) => {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
           await interaction.editReply({
             content: `❌ **Failed to Fetch Transactions**\n\n${errorMessage}`,
+          })
+        }
+        break
+      }
+
+      case "tx-raw": {
+        const txid = interaction.options.getString("txid") || "d8786af1e7e597d77c073905fd6fd7053e4d12894eefa19c5deb45842fc2a8a2"
+
+        await interaction.editReply({
+          content: `🔄 **Fetching Transaction Raw Data...**\n\nRetrieving transaction details and parsing charms.dev Token Standard...`,
+        })
+
+        try {
+          const txData = await walletManager.getTransactionRawData(txid)
+
+          // Format inputs
+          let inputsText = ""
+          txData.inputs.forEach((input, index) => {
+            inputsText += `\n**Input ${index + 1}:**\n`
+            inputsText += `• Previous TXID: \`${input.txid}\`\n`
+            inputsText += `• Vout: \`${input.vout}\`\n`
+            inputsText += `• Sequence: \`${input.sequence}\`\n`
+            if (input.scriptSig) {
+              inputsText += `• ScriptSig: \`${input.scriptSig}\`\n`
+            }
+            if (input.witness && input.witness.length > 0) {
+              inputsText += `• Witness: ${input.witness.length} item(s)\n`
+              input.witness.forEach((w, i) => {
+                if (w.length > 0 && w.length < 200) {
+                  inputsText += `  - Witness[${i}]: \`${w}\`\n`
+                } else if (w.length >= 200) {
+                  inputsText += `  - Witness[${i}]: \`${w.substring(0, 100)}...\` (${w.length} bytes)\n`
+                }
+              })
+            }
+          })
+
+          // Format outputs
+          let outputsText = ""
+          txData.outputs.forEach((output, index) => {
+            outputsText += `\n**Output ${index + 1}:**\n`
+            outputsText += `• Value: \`${output.value}\` satoshis (${(output.value / 100000000).toFixed(8)} BTC)\n`
+            if (output.address) {
+              outputsText += `• Address: \`${output.address}\`\n`
+            }
+            if (output.opReturn) {
+              outputsText += `• OP_RETURN: \`${output.opReturn.substring(0, 200)}${output.opReturn.length > 200 ? '...' : ''}\`\n`
+            }
+            outputsText += `• ScriptPubKey: \`${output.scriptPubKey.substring(0, 100)}${output.scriptPubKey.length > 100 ? '...' : ''}\`\n`
+          })
+
+          // Format spell if found
+          let spellText = ""
+          if (txData.spell) {
+            spellText = `\n**🔮 Charms.dev Token Standard Spell:**\n\`\`\`json\n${JSON.stringify(txData.spell, null, 2)}\n\`\`\`\n`
+          } else {
+            spellText = `\n**🔮 Charms.dev Token Standard Spell:**\n❌ No spell found in transaction (checked OP_RETURN and witness data)\n`
+          }
+
+          // Status information
+          const statusText = txData.status
+            ? `\n**Status:**\n` +
+              `• Confirmed: ${txData.status.confirmed ? "✅ Yes" : "⏳ No"}\n` +
+              (txData.status.block_height ? `• Block Height: \`${txData.status.block_height}\`\n` : "") +
+              (txData.status.block_hash ? `• Block Hash: \`${txData.status.block_hash}\`\n` : "") +
+              (txData.status.block_time ? `• Block Time: \`${new Date(txData.status.block_time * 1000).toISOString()}\`\n` : "")
+            : ""
+
+          await interaction.editReply({
+            content:
+              `📋 **Transaction Raw Data**\n\n` +
+              `**Transaction ID:** \`${txData.txid}\`\n` +
+              `**Size:** \`${txData.size}\` bytes\n` +
+              `**Weight:** \`${txData.weight}\`\n` +
+              (txData.fee ? `**Fee:** \`${txData.fee}\` satoshis\n` : "") +
+              statusText +
+              `\n**Raw Hex:**\n\`\`\`\n${txData.rawHex.substring(0, 500)}${txData.rawHex.length > 500 ? '...' : ''}\n\`\`\`` +
+              `\n**Inputs (${txData.inputs.length}):**` +
+              inputsText +
+              `\n**Outputs (${txData.outputs.length}):**` +
+              outputsText +
+              spellText +
+              `\n🌐 **View on Explorer:**\nhttps://mempool.space/testnet4/tx/${txData.txid}`,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Failed to Fetch Transaction Raw Data**\n\n${errorMessage}`,
           })
         }
         break
