@@ -22,16 +22,6 @@ const commands = [
     .setName("airdrop-start")
     .setDescription("BOS: Start the airdrop process - create your wallet and begin mining"),
 
-  new SlashCommandBuilder()
-    .setName("airdrop-import")
-    .setDescription("BOS: Import an existing wallet using your 12-word seed phrase")
-    .addStringOption((option) =>
-      option
-        .setName("seedphrase")
-        .setDescription("Your 12-word seed phrase (space-separated)")
-        .setRequired(true),
-    ),
-
   new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
 
   new SlashCommandBuilder()
@@ -175,38 +165,7 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "airdrop-wallet": {
-        const importSeedPhrase = interaction.options.getString("import")
-
-        // If import option is provided, handle wallet import
-        if (importSeedPhrase) {
-          // Delete the command message immediately for security
-          await interaction.deleteReply()
-
-          try {
-            const wallet = await walletManager.importWallet(userId, username, importSeedPhrase)
-
-            await interaction.followUp({
-              ephemeral: true,
-              content:
-                `✅ **Wallet Imported Successfully!**\n\n` +
-                `📍 **Address:** \`${wallet.address}\`\n\n` +
-                `**Next Steps:**\n` +
-                `1️⃣ Use \`/airdrop-mine\` to start mining tokens\n` +
-                `2️⃣ Use \`/airdrop-claim\` to claim your rewards\n` +
-                `3️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
-                `🔒 Your seed phrase has been securely imported and stored.`,
-            })
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Failed to import wallet"
-            await interaction.followUp({
-              ephemeral: true,
-              content: `❌ **Import Failed:** ${errorMessage}`,
-            })
-          }
-          return
-        }
-
-        // Otherwise, show wallet information
+        // Show wallet information
         const wallet = await walletManager.getWallet(userId)
 
         if (!wallet) {
