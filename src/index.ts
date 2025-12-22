@@ -127,10 +127,16 @@ client.once("clientReady", async () => {
 
   try {
     console.log("🔄 Refreshing application commands...")
+    console.log(`📋 Registering ${commands.length} commands:`, commands.map((cmd: any) => cmd.name).join(", "))
     await rest.put(Routes.applicationCommands(client.user!.id), { body: commands })
     console.log("✅ Successfully registered application commands.")
+    console.log("📝 Registered commands:", commands.map((cmd: any) => cmd.name).join(", "))
   } catch (error) {
     console.error("❌ Error registering commands:", error)
+    if (error instanceof Error) {
+      console.error("Error details:", error.message)
+      console.error("Stack:", error.stack)
+    }
   }
 })
 
