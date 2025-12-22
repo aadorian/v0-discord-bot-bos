@@ -11,6 +11,45 @@ import type { DatabaseManager } from "./database"
 const bip32 = BIP32Factory(ecc)
 const ECPair = ECPairFactory(ecc)
 
+// Type definition for mempool.space API transaction response
+interface MempoolTransaction {
+  txid: string
+  version?: number
+  locktime?: number
+  size?: number
+  weight?: number
+  fee?: number
+  status?: {
+    confirmed: boolean
+    block_height?: number
+    block_hash?: string
+    block_time?: number
+  }
+  vin?: Array<{
+    txid: string
+    vout: number
+    prevout?: {
+      scriptpubkey: string
+      scriptpubkey_asm?: string
+      scriptpubkey_type?: string
+      scriptpubkey_address?: string
+      value?: number
+    }
+    scriptsig?: string
+    scriptsig_asm?: string
+    witness?: string[]
+    is_coinbase?: boolean
+    sequence?: number
+  }>
+  vout?: Array<{
+    scriptpubkey: string
+    scriptpubkey_asm?: string
+    scriptpubkey_type?: string
+    scriptpubkey_address?: string
+    value?: number
+  }>
+}
+
 export interface Wallet {
   userId: string
   address: string
@@ -576,15 +615,18 @@ export class WalletManager {
       if (!txResponse.ok) {
         throw new Error(`Failed to fetch transaction details: ${txResponse.statusText}`)
       }
-      const txData = await txResponse.json()
+      const txData = (await txResponse.json()) as MempoolTransaction
 
       // Parse the raw transaction using bitcoinjs-lib
       const network = bitcoin.networks.testnet
       const tx = bitcoin.Transaction.fromHex(rawHex)
 
-      // Extract inputs
+      // Extract inputs - get witness data from API response
       const inputs = tx.ins.map((input, index) => {
-        const witness = tx.witness && tx.witness[index] ? tx.witness[index].map(w => w.toString('hex')) : undefined
+        // Get witness from API response if available
+        const vinData = txData.vin?.[index]
+        const witness = vinData?.witness ? vinData.witness.map((w: string) => w) : undefined
+        
         return {
           txid: Buffer.from(input.hash).reverse().toString('hex'),
           vout: input.index,
@@ -647,17 +689,22 @@ export class WalletManager {
       }
 
       // Also check witness data for spell (charms.dev may embed spells in witness)
-      if (!spell && tx.witness) {
-        for (const witnessStack of tx.witness) {
-          for (const witnessItem of witnessStack) {
-            try {
-              const text = witnessItem.toString('utf8')
-              if (text.startsWith('{') && (text.includes('"version"') || text.includes('"apps"') || text.includes('"ins"') || text.includes('"outs"'))) {
-                spell = JSON.parse(text)
-                break
+      // Get witness data from API response
+      if (!spell && txData.vin) {
+        for (const vin of txData.vin) {
+          if (vin.witness && Array.isArray(vin.witness)) {
+            for (const witnessItem of vin.witness) {
+              try {
+                // Witness items from API are hex strings, convert to buffer then to text
+                const buffer = Buffer.from(witnessItem, 'hex')
+                const text = buffer.toString('utf8')
+                if (text.startsWith('{') && (text.includes('"version"') || text.includes('"apps"') || text.includes('"ins"') || text.includes('"outs"'))) {
+                  spell = JSON.parse(text)
+                  break
+                }
+              } catch (e) {
+                // Not valid JSON or not UTF-8
               }
-            } catch (e) {
-              // Not valid JSON
             }
           }
           if (spell) break
