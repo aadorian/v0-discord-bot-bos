@@ -456,4 +456,53 @@ export class WalletManager {
     }
   }
 
+  async getAddressTransactions(address: string, limit: number = 5): Promise<Array<{
+    txid: string
+    status: { confirmed: boolean; block_height?: number; block_hash?: string; block_time?: number }
+    fee?: number
+    size?: number
+    weight?: number
+    value?: number
+  }>> {
+    try {
+      // Use mempool.space API to get address transactions
+      const response = await fetch(`https://mempool.space/testnet4/api/address/${address}/txs`)
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch transactions: ${response.statusText}`)
+      }
+
+      const transactions = (await response.json()) as Array<{
+        txid: string
+        status: { confirmed: boolean; block_height?: number; block_hash?: string; block_time?: number }
+        fee?: number
+        size?: number
+        weight?: number
+        vin: Array<{ prevout?: { value?: number } }>
+        vout: Array<{ value?: number }>
+      }>
+
+      // Get the last N transactions (already sorted by most recent)
+      const lastTransactions = transactions.slice(0, limit)
+
+      // Map to return format - transactions from address endpoint already have most info
+      return lastTransactions.map((tx) => {
+        // Calculate total output value
+        const totalOutput = tx.vout.reduce((sum, output) => sum + (output.value || 0), 0)
+        
+        return {
+          txid: tx.txid,
+          status: tx.status,
+          fee: tx.fee,
+          size: tx.size,
+          weight: tx.weight,
+          value: totalOutput, // Total output value
+        }
+      })
+    } catch (error) {
+      console.error("Error fetching address transactions:", error)
+      throw new Error("Failed to fetch address transactions from mempool")
+    }
+  }
+
 }

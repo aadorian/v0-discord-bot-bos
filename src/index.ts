@@ -118,6 +118,18 @@ const commands = [
         .setDescription("Original witness UTXO (format: txid:vout)")
         .setRequired(false),
     ),
+
+  new SlashCommandBuilder()
+    .setName("transactions")
+    .setDescription("Get the last 5 transactions for your wallet address")
+    .addIntegerOption((option) =>
+      option
+        .setName("limit")
+        .setDescription("Number of transactions to retrieve (default: 5, max: 20)")
+        .setRequired(false)
+        .setMinValue(1)
+        .setMaxValue(20),
+    ),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -604,6 +616,65 @@ client.on("interactionCreate", async (interaction) => {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
           await interaction.editReply({
             content: `❌ **Query Failed**\n\n${errorMessage}`,
+          })
+        }
+        break
+      }
+
+      case "transactions": {
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
+          })
+          return
+        }
+
+        const limit = interaction.options.getInteger("limit") || 5
+
+        await interaction.editReply({
+          content: `🔄 **Fetching Transactions...**\n\nRetrieving last ${limit} transactions for your address...`,
+        })
+
+        try {
+          const transactions = await walletManager.getAddressTransactions(wallet.address, limit)
+
+          if (transactions.length === 0) {
+            await interaction.editReply({
+              content: `📋 **Transaction History**\n\n📍 **Address:** \`${wallet.address}\`\n\n❌ No transactions found for this address.`,
+            })
+            return
+          }
+
+          let transactionsText = `📋 **Last ${transactions.length} Transactions**\n\n📍 **Address:** \`${wallet.address}\`\n\n`
+
+          transactions.forEach((tx, index) => {
+            const status = tx.status.confirmed ? "✅ Confirmed" : "⏳ Unconfirmed"
+            const blockInfo = tx.status.block_height
+              ? ` (Block: ${tx.status.block_height})`
+              : ""
+            const valueText = tx.value !== undefined
+              ? `\n   💰 Value Change: ${tx.value > 0 ? "+" : ""}${(tx.value / 100000000).toFixed(8)} BTC`
+              : ""
+            const feeText = tx.fee !== undefined ? `\n   ⚡ Fee: ${tx.fee} sats` : ""
+            const sizeText = tx.size !== undefined ? `\n   📦 Size: ${tx.size} bytes` : ""
+
+            transactionsText += `${index + 1}. **${status}${blockInfo}**\n`
+            transactionsText += `   🔗 TXID: \`${tx.txid}\``
+            transactionsText += valueText
+            transactionsText += feeText
+            transactionsText += sizeText
+            transactionsText += `\n   🌐 https://mempool.space/testnet4/tx/${tx.txid}\n\n`
+          })
+
+          await interaction.editReply({
+            content: transactionsText,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Failed to Fetch Transactions**\n\n${errorMessage}`,
           })
         }
         break
