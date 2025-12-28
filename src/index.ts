@@ -146,6 +146,15 @@ client.on("interactionCreate", async (interaction) => {
   const userId = interaction.user.id
   const username = interaction.user.username
 
+  // Helper function to ensure user has a wallet
+  const ensureWallet = async () => {
+    let wallet = await walletManager.getWallet(userId)
+    if (!wallet) {
+      wallet = await walletManager.createWallet(userId, username)
+    }
+    return wallet
+  }
+
   try {
     await interaction.deferReply({ ephemeral: false })
 
@@ -166,15 +175,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "airdrop-wallet": {
-        // Show wallet information
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Show wallet information - auto-create if needed
+        const wallet = await ensureWallet()
 
         // Fetch Bitcoin balance from testnet4
         let btcBalanceText = ""
@@ -204,21 +206,16 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "airdrop-balance": {
+        // Auto-create wallet if needed
+        await ensureWallet()
+
         const balance = await airdropManager.getBalance(userId)
-
-        if (balance === null) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
-
         const stats = await airdropManager.getUserStats(userId)
 
         await interaction.editReply({
           content:
             `💰 **Your Token Balance**\n\n` +
-            `**Balance:** \`${balance.toFixed(2)}\` CHARMS\n\n` +
+            `**Balance:** \`${(balance ?? 0).toFixed(2)}\` CHARMS\n\n` +
             `📊 **Statistics:**\n` +
             `• Total Mined: \`${stats.totalMined.toFixed(2)}\` CHARMS\n` +
             `• Total Claims: \`${stats.totalClaims}\`\n` +
@@ -229,14 +226,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "btc-info": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
 
         await interaction.editReply({
           content:
@@ -267,14 +258,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "airdrop-myself": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
 
         await interaction.editReply({
           content: `🔄 **Creating Transaction...**\n\nFetching UTXOs and building transaction...`,
@@ -303,14 +288,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "airdrop-send": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
 
         // Get options with default recipient address
         const recipientAddress =
@@ -346,14 +325,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "sendto": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
 
         // Get options - address is required for sendto
         const recipientAddress = interaction.options.getString("address")
@@ -458,14 +431,8 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "transactions": {
-        const wallet = await walletManager.getWallet(userId)
-
-        if (!wallet) {
-          await interaction.editReply({
-            content: "❌ You don't have a wallet yet! Use `/airdrop-start` to create one.",
-          })
-          return
-        }
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
 
         const limit = interaction.options.getInteger("limit") || 5
 
