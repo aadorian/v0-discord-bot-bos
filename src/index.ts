@@ -23,6 +23,10 @@ const commands = [
   new SlashCommandBuilder().setName("airdrop-balance").setDescription("Check your token balance"),
 
   new SlashCommandBuilder()
+    .setName("clear")
+    .setDescription("Clear all your data (wallet, balance, mining history)"),
+
+  new SlashCommandBuilder()
     .setName("btc-info")
     .setDescription("Display Bitcoin technical data structures and types"),
 
@@ -202,6 +206,37 @@ client.on("interactionCreate", async (interaction) => {
             `• Total Claims: \`${stats.totalClaims}\`\n` +
             `• Mining Sessions: \`${stats.miningSessions}\`\n` +
             `• Best Zero Bits: \`${stats.bestZeroBits}\``,
+        })
+        break
+      }
+
+      case "clear": {
+        // Check if user has data
+        const wallet = await walletManager.getWallet(userId)
+
+        if (!wallet) {
+          await interaction.editReply({
+            content: "❌ You don't have any data to clear.",
+          })
+          return
+        }
+
+        // Get user stats before clearing
+        const stats = await airdropManager.getUserStats(userId)
+
+        // Clear user data
+        await db.clearUserData(userId)
+
+        await interaction.editReply({
+          content:
+            `🗑️ **Data Cleared Successfully**\n\n` +
+            `**Deleted Data:**\n` +
+            `• Wallet Address: \`${wallet.address}\`\n` +
+            `• CHARMS Balance: \`${stats.balance.toFixed(2)}\`\n` +
+            `• Total Mined: \`${stats.totalMined.toFixed(2)}\`\n` +
+            `• Mining Sessions: \`${stats.miningSessions}\`\n` +
+            `• Total Claims: \`${stats.totalClaims}\`\n\n` +
+            `✨ All your data has been reset. Use any command to start fresh!`,
         })
         break
       }

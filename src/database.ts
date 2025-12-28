@@ -165,4 +165,8 @@ export class DatabaseManager {
     const rank = sorted.findIndex((u) => u.userId === userId)
     return rank + 1
   }
+
+  async clearUserData(userId: string): Promise<boolean> {
+    return this.users.delete(userId)
+  }
 }
