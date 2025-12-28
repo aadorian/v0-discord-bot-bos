@@ -18,10 +18,6 @@ const airdropManager = new AirdropManager(db, walletManager)
 
 // Define slash commands
 const commands = [
-  new SlashCommandBuilder()
-    .setName("airdrop-start")
-    .setDescription("BOS: Start the airdrop process - create your wallet and begin mining"),
-
   new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
 
   new SlashCommandBuilder().setName("airdrop-balance").setDescription("Check your token balance"),
@@ -159,21 +155,6 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.deferReply({ ephemeral: false })
 
     switch (interaction.commandName) {
-      case "airdrop-start": {
-        const wallet = await walletManager.createWallet(userId, username)
-
-        await interaction.editReply({
-          content:
-            `🎉 **Welcome to the CHARMS Airdrop!**\n\n` +
-            `✅ Your wallet has been created!\n` +
-            `📍 **Address:** \`${wallet.address}\`\n\n` +
-            `**Next Steps:**\n` +
-            `1️⃣ Use \`/airdrop-balance\` to check your balance\n\n` +
-            `⚠️ **Keep your seed phrase safe!** Use \`/airdrop-wallet\` to view it privately.`,
-        })
-        break
-      }
-
       case "airdrop-wallet": {
         // Show wallet information - auto-create if needed
         const wallet = await ensureWallet()
