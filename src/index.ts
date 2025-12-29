@@ -27,6 +27,48 @@ const commands = [
     .setDescription("Clear all your data (wallet, balance, mining history)"),
 
   new SlashCommandBuilder()
+    .setName("tip")
+    .setDescription("Tip CHARMS tokens to another user")
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("User to tip")
+        .setRequired(true),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("Amount of CHARMS to tip")
+        .setRequired(true)
+        .setMinValue(1),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("message")
+        .setDescription("Optional message with the tip")
+        .setRequired(false),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("leaderboard")
+    .setDescription("View community leaderboard")
+    .addStringOption((option) =>
+      option
+        .setName("type")
+        .setDescription("Leaderboard type")
+        .setRequired(false)
+        .addChoices(
+          { name: "Balance", value: "balance" },
+          { name: "Mining", value: "mining" },
+          { name: "Tipping", value: "tipping" },
+        ),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("stats")
+    .setDescription("View your personal statistics"),
+
+  new SlashCommandBuilder()
     .setName("btc-info")
     .setDescription("Display Bitcoin technical data structures and types"),
 
@@ -237,6 +279,157 @@ client.on("interactionCreate", async (interaction) => {
             `• Mining Sessions: \`${stats.miningSessions}\`\n` +
             `• Total Claims: \`${stats.totalClaims}\`\n\n` +
             `✨ All your data has been reset. Use any command to start fresh!`,
+        })
+        break
+      }
+
+      case "tip": {
+        // Auto-create wallet if needed
+        await ensureWallet()
+
+        const targetUser = interaction.options.getUser("user", true)
+        const amount = interaction.options.getInteger("amount", true)
+        const message = interaction.options.getString("message")
+
+        // Check if tipping self
+        if (targetUser.id === userId) {
+          await interaction.editReply({
+            content: "❌ You cannot tip yourself!",
+          })
+          return
+        }
+
+        // Ensure target user has a wallet
+        const targetWallet = await walletManager.getWallet(targetUser.id)
+        if (!targetWallet) {
+          await walletManager.createWallet(targetUser.id, targetUser.username)
+        }
+
+        // Perform the tip
+        const result = await db.tipUser(userId, targetUser.id, amount, message || undefined)
+
+        if (!result.success) {
+          await interaction.editReply({
+            content: `❌ **Tip Failed**\n\n${result.error}`,
+          })
+          return
+        }
+
+        const senderBalance = await airdropManager.getBalance(userId)
+
+        await interaction.editReply({
+          content:
+            `✅ **Tip Sent!**\n\n` +
+            `You tipped **${amount.toFixed(2)} CHARMS** to <@${targetUser.id}>\n` +
+            (message ? `💬 Message: "${message}"\n\n` : "\n") +
+            `Your new balance: **${(senderBalance ?? 0).toFixed(2)} CHARMS**`,
+        })
+        break
+      }
+
+      case "leaderboard": {
+        const type = interaction.options.getString("type") || "balance"
+
+        let leaderboardData: Array<{ userId: string; username: string; value: number; label: string }>
+
+        if (type === "balance") {
+          const leaders = await airdropManager.getLeaderboard(10)
+          leaderboardData = leaders.map((u) => ({
+            userId: u.userId,
+            username: u.username,
+            value: u.balance,
+            label: "CHARMS",
+          }))
+        } else if (type === "mining") {
+          const allUsers = await db.getAllUsers()
+          const sorted = allUsers
+            .sort((a, b) => b.totalMined - a.totalMined)
+            .slice(0, 10)
+          leaderboardData = sorted.map((u) => ({
+            userId: u.userId,
+            username: u.username,
+            value: u.totalMined,
+            label: "CHARMS mined",
+          }))
+        } else {
+          // tipping
+          const allUsers = await db.getAllUsers()
+          const sorted = allUsers
+            .sort((a, b) => b.totalTipped - a.totalTipped)
+            .slice(0, 10)
+          leaderboardData = sorted.map((u) => ({
+            userId: u.userId,
+            username: u.username,
+            value: u.totalTipped,
+            label: "CHARMS tipped",
+          }))
+        }
+
+        if (leaderboardData.length === 0) {
+          await interaction.editReply({
+            content: "📊 **Leaderboard**\n\nNo data yet. Be the first!",
+          })
+          return
+        }
+
+        const medals = ["👑", "🥈", "🥉"]
+        let leaderboardText = `🏆 **${type.charAt(0).toUpperCase() + type.slice(1)} Leaderboard**\n\n`
+
+        leaderboardData.forEach((entry, index) => {
+          const medal = index < 3 ? medals[index] : `${index + 1}.`
+          leaderboardText += `${medal} **${entry.username}** - ${entry.value.toFixed(2)} ${entry.label}\n`
+        })
+
+        // Add user's rank if not in top 10
+        const userRank = await airdropManager.getUserRank(userId)
+        if (userRank > 10) {
+          const userBalance = await airdropManager.getBalance(userId)
+          leaderboardText += `\n...\n\n**Your Rank:** #${userRank} (${(userBalance ?? 0).toFixed(2)} CHARMS)`
+        }
+
+        await interaction.editReply({
+          content: leaderboardText,
+        })
+        break
+      }
+
+      case "stats": {
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
+
+        const stats = await airdropManager.getUserStats(userId)
+        const userData = await db.getUserData(userId)
+        const userRank = await airdropManager.getUserRank(userId)
+
+        if (!userData) {
+          await interaction.editReply({
+            content: "❌ Unable to fetch statistics.",
+          })
+          return
+        }
+
+        const walletAge = Math.floor((Date.now() - userData.createdAt.getTime()) / (1000 * 60 * 60 * 24))
+
+        await interaction.editReply({
+          content:
+            `📊 **Your Statistics**\n\n` +
+            `⏰ **Wallet Age:** ${walletAge} days\n` +
+            `🏆 **Rank:** #${userRank}\n\n` +
+            `💰 **CHARMS:**\n` +
+            `├─ Balance: \`${stats.balance.toFixed(2)}\`\n` +
+            `├─ Total Mined: \`${stats.totalMined.toFixed(2)}\`\n` +
+            `├─ Total Tipped Out: \`${userData.totalTipped.toFixed(2)}\`\n` +
+            `└─ Total Received: \`${userData.totalReceived.toFixed(2)}\`\n\n` +
+            `⛏️ **Mining:**\n` +
+            `├─ Sessions: \`${stats.miningSessions}\`\n` +
+            `├─ Best Zero Bits: \`${stats.bestZeroBits}\`\n` +
+            `└─ Avg Reward: \`${stats.averageReward.toFixed(2)}\`\n\n` +
+            `🤝 **Social:**\n` +
+            `├─ Tips Sent: \`${userData.tipsSent.length}\`\n` +
+            `├─ Tips Received: \`${userData.tipsReceived.length}\`\n` +
+            `└─ Total Claims: \`${stats.totalClaims}\`\n\n` +
+            `🔄 **Activity:**\n` +
+            `└─ Transactions: \`${userData.transactionCount}\``,
         })
         break
       }

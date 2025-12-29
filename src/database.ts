@@ -14,12 +14,27 @@ interface UserData {
   pendingReward: number
   miningHistory: MiningResult[]
   claimHistory: ClaimRecord[]
+  tipsSent: TipRecord[]
+  tipsReceived: TipRecord[]
+  totalTipped: number
+  totalReceived: number
+  transactionCount: number
   createdAt: Date
 }
 
 interface ClaimRecord {
   amount: number
   txId: string
+  timestamp: Date
+}
+
+interface TipRecord {
+  fromUserId: string
+  fromUsername: string
+  toUserId: string
+  toUsername: string
+  amount: number
+  message?: string
   timestamp: Date
 }
 
@@ -39,6 +54,11 @@ export class DatabaseManager {
       pendingReward: 0,
       miningHistory: [],
       claimHistory: [],
+      tipsSent: [],
+      tipsReceived: [],
+      totalTipped: 0,
+      totalReceived: 0,
+      transactionCount: 0,
       createdAt: new Date(),
     }
 
@@ -168,5 +188,63 @@ export class DatabaseManager {
 
   async clearUserData(userId: string): Promise<boolean> {
     return this.users.delete(userId)
+  }
+
+  async tipUser(fromUserId: string, toUserId: string, amount: number, message?: string): Promise<{ success: boolean; error?: string }> {
+    const sender = this.users.get(fromUserId)
+    const receiver = this.users.get(toUserId)
+
+    if (!sender) {
+      return { success: false, error: "Sender wallet not found" }
+    }
+
+    if (!receiver) {
+      return { success: false, error: "Receiver wallet not found" }
+    }
+
+    if (sender.balance < amount) {
+      return { success: false, error: `Insufficient balance. You have ${sender.balance.toFixed(2)} CHARMS` }
+    }
+
+    if (amount <= 0) {
+      return { success: false, error: "Amount must be greater than 0" }
+    }
+
+    // Perform the tip
+    sender.balance -= amount
+    receiver.balance += amount
+
+    // Record the tip
+    const tipRecord: TipRecord = {
+      fromUserId: sender.userId,
+      fromUsername: sender.username,
+      toUserId: receiver.userId,
+      toUsername: receiver.username,
+      amount,
+      message,
+      timestamp: new Date(),
+    }
+
+    sender.tipsSent.push(tipRecord)
+    receiver.tipsReceived.push(tipRecord)
+    sender.totalTipped += amount
+    receiver.totalReceived += amount
+
+    return { success: true }
+  }
+
+  async getUserData(userId: string): Promise<UserData | null> {
+    return this.users.get(userId) || null
+  }
+
+  async getAllUsers(): Promise<UserData[]> {
+    return Array.from(this.users.values())
+  }
+
+  async incrementTransactionCount(userId: string): Promise<void> {
+    const user = this.users.get(userId)
+    if (user) {
+      user.transactionCount++
+    }
   }
 }
