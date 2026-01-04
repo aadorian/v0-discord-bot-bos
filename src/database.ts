@@ -203,7 +203,7 @@ export class DatabaseManager {
     }
 
     if (sender.balance < amount) {
-      return { success: false, error: `Insufficient balance. You have ${sender.balance.toFixed(2)} CHARMS` }
+      return { success: false, error: `Insufficient balance. You have ${sender.balance.toFixed(2)} my token` }
     }
 
     if (amount <= 0) {

@@ -18,9 +18,9 @@ const airdropManager = new AirdropManager(db, walletManager)
 
 // Define slash commands
 const commands = [
-  new SlashCommandBuilder().setName("airdrop-wallet").setDescription("Get your wallet address and balance"),
+  new SlashCommandBuilder().setName("wallet").setDescription("Get your wallet address and balance"),
 
-  new SlashCommandBuilder().setName("airdrop-balance").setDescription("Check your token balance"),
+  new SlashCommandBuilder().setName("balance").setDescription("Check your token balance"),
 
   new SlashCommandBuilder()
     .setName("clear")
@@ -28,7 +28,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("tip")
-    .setDescription("Tip CHARMS tokens to another user")
+    .setDescription("Tip my tokens to another user")
     .addUserOption((option) =>
       option
         .setName("user")
@@ -38,7 +38,7 @@ const commands = [
     .addIntegerOption((option) =>
       option
         .setName("amount")
-        .setDescription("Amount of CHARMS to tip")
+        .setDescription("Amount of my tokens to tip")
         .setRequired(true)
         .setMinValue(1),
     )
@@ -73,11 +73,11 @@ const commands = [
     .setDescription("Display Bitcoin technical data structures and types"),
 
   new SlashCommandBuilder()
-    .setName("airdrop-myself")
+    .setName("send-myself")
     .setDescription("Send a Bitcoin transaction from your address to itself"),
 
   new SlashCommandBuilder()
-    .setName("airdrop-send")
+    .setName("send")
     .setDescription("Send Bitcoin to another address on testnet4")
     .addStringOption((option) =>
       option
@@ -159,6 +159,34 @@ const commands = [
         .setDescription("Transaction ID (default: d8786af1e7e597d77c073905fd6fd7053e4d12894eefa19c5deb45842fc2a8a2)")
         .setRequired(false),
     ),
+
+  new SlashCommandBuilder()
+    .setName("transfer-token")
+    .setDescription("Transfer your minted tokens to another address")
+    .addStringOption((option) =>
+      option
+        .setName("recipient")
+        .setDescription("Recipient address")
+        .setRequired(true)
+        .addChoices(
+          { name: "Primary (tb1px6jrge3dynx9tjp6vwp7xrq9a3gm9dqpz9jts4jezhvlulayvrqq9rcrz3)", value: "tb1px6jrge3dynx9tjp6vwp7xrq9a3gm9dqpz9jts4jezhvlulayvrqq9rcrz3" },
+          { name: "Secondary (tb1p40c5eywchazxa4t3jdytnc39c3g812tzegzk7zgrzcdm324xce3qww4eud)", value: "tb1p40c5eywchazxa4t3jdytnc39c3g812tzegzk7zgrzcdm324xce3qww4eud" },
+          { name: "Custom address", value: "custom" },
+        ),
+    )
+    .addStringOption((option) =>
+      option
+        .setName("custom_address")
+        .setDescription("Custom recipient address (if 'Custom address' selected)")
+        .setRequired(false),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("Amount of tokens to transfer (default: 69420)")
+        .setRequired(false)
+        .setMinValue(1),
+    ),
 ].map((command) => command.toJSON())
 
 // Register slash commands
@@ -201,7 +229,7 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.deferReply({ ephemeral: false })
 
     switch (interaction.commandName) {
-      case "airdrop-wallet": {
+      case "wallet": {
         // Show wallet information - auto-create if needed
         const wallet = await ensureWallet()
 
@@ -232,7 +260,7 @@ client.on("interactionCreate", async (interaction) => {
         break
       }
 
-      case "airdrop-balance": {
+      case "balance": {
         // Auto-create wallet if needed
         await ensureWallet()
 
@@ -242,12 +270,24 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.editReply({
           content:
             `💰 **Your Token Balance**\n\n` +
-            `**Balance:** \`${(balance ?? 0).toFixed(2)}\` CHARMS\n\n` +
+            `**Balance:** \`${(balance ?? 0).toFixed(2)}\` my token\n\n` +
             `📊 **Statistics:**\n` +
-            `• Total Mined: \`${stats.totalMined.toFixed(2)}\` CHARMS\n` +
+            `• Total Mined: \`${stats.totalMined.toFixed(2)}\` my token\n` +
             `• Total Claims: \`${stats.totalClaims}\`\n` +
             `• Mining Sessions: \`${stats.miningSessions}\`\n` +
-            `• Best Zero Bits: \`${stats.bestZeroBits}\``,
+            `• Best Zero Bits: \`${stats.bestZeroBits}\`\n\n` +
+            `🎨 **NFT Contract Info:**\n` +
+            `• Type: Transfer-enabled NFT\n` +
+            `• Verification Key: \`4107a63...7e1e78\`\n` +
+            `• Total Supply: 100,000 tokens\n` +
+            `• Transferred: 10,000 tokens\n` +
+            `• Remaining: 90,000 tokens\n\n` +
+            `🔗 **Transaction Links:**\n` +
+            `• NFT TX: [dff7e97...](https://mempool.space/testnet4/tx/dff7e977d2a7f8883b65b3961f27782b91c6ca3e1efb1d27851fcea4ee34a514)\n` +
+            `• Spell TX: [9a2d8b5...](https://mempool.space/testnet4/tx/9a2d8b5cf1450e4591817ee818386e96c30bb6eb570e7b12c76320d3c3cb6ea4)\n\n` +
+            `📍 **Recent Transfer:**\n` +
+            `• Recipient: \`tb1q4hljlww9gw6vdk7gakw9r5ktplhxj5knecawqt\`\n` +
+            `• Amount: 10,000 TRANSFER-TOKEN`,
         })
         break
       }
@@ -274,7 +314,7 @@ client.on("interactionCreate", async (interaction) => {
             `🗑️ **Data Cleared Successfully**\n\n` +
             `**Deleted Data:**\n` +
             `• Wallet Address: \`${wallet.address}\`\n` +
-            `• CHARMS Balance: \`${stats.balance.toFixed(2)}\`\n` +
+            `• my token Balance: \`${stats.balance.toFixed(2)}\`\n` +
             `• Total Mined: \`${stats.totalMined.toFixed(2)}\`\n` +
             `• Mining Sessions: \`${stats.miningSessions}\`\n` +
             `• Total Claims: \`${stats.totalClaims}\`\n\n` +
@@ -320,9 +360,9 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.editReply({
           content:
             `✅ **Tip Sent!**\n\n` +
-            `You tipped **${amount.toFixed(2)} CHARMS** to <@${targetUser.id}>\n` +
+            `You tipped **${amount.toFixed(2)} my token** to <@${targetUser.id}>\n` +
             (message ? `💬 Message: "${message}"\n\n` : "\n") +
-            `Your new balance: **${(senderBalance ?? 0).toFixed(2)} CHARMS**`,
+            `Your new balance: **${(senderBalance ?? 0).toFixed(2)} my token**`,
         })
         break
       }
@@ -338,7 +378,7 @@ client.on("interactionCreate", async (interaction) => {
             userId: u.userId,
             username: u.username,
             value: u.balance,
-            label: "CHARMS",
+            label: "my token",
           }))
         } else if (type === "mining") {
           const allUsers = await db.getAllUsers()
@@ -349,7 +389,7 @@ client.on("interactionCreate", async (interaction) => {
             userId: u.userId,
             username: u.username,
             value: u.totalMined,
-            label: "CHARMS mined",
+            label: "my token mined",
           }))
         } else {
           // tipping
@@ -361,7 +401,7 @@ client.on("interactionCreate", async (interaction) => {
             userId: u.userId,
             username: u.username,
             value: u.totalTipped,
-            label: "CHARMS tipped",
+            label: "my token tipped",
           }))
         }
 
@@ -384,7 +424,7 @@ client.on("interactionCreate", async (interaction) => {
         const userRank = await airdropManager.getUserRank(userId)
         if (userRank > 10) {
           const userBalance = await airdropManager.getBalance(userId)
-          leaderboardText += `\n...\n\n**Your Rank:** #${userRank} (${(userBalance ?? 0).toFixed(2)} CHARMS)`
+          leaderboardText += `\n...\n\n**Your Rank:** #${userRank} (${(userBalance ?? 0).toFixed(2)} my token)`
         }
 
         await interaction.editReply({
@@ -415,7 +455,7 @@ client.on("interactionCreate", async (interaction) => {
             `📊 **Your Statistics**\n\n` +
             `⏰ **Wallet Age:** ${walletAge} days\n` +
             `🏆 **Rank:** #${userRank}\n\n` +
-            `💰 **CHARMS:**\n` +
+            `💰 **my token:**\n` +
             `├─ Balance: \`${stats.balance.toFixed(2)}\`\n` +
             `├─ Total Mined: \`${stats.totalMined.toFixed(2)}\`\n` +
             `├─ Total Tipped Out: \`${userData.totalTipped.toFixed(2)}\`\n` +
@@ -466,7 +506,7 @@ client.on("interactionCreate", async (interaction) => {
         break
       }
 
-      case "airdrop-myself": {
+      case "send-myself": {
         // Auto-create wallet if needed
         const wallet = await ensureWallet()
 
@@ -496,7 +536,7 @@ client.on("interactionCreate", async (interaction) => {
         break
       }
 
-      case "airdrop-send": {
+      case "send": {
         // Auto-create wallet if needed
         const wallet = await ensureWallet()
 
@@ -777,6 +817,56 @@ client.on("interactionCreate", async (interaction) => {
             content: `❌ **Failed to Fetch Transaction Raw Data**\n\n${errorMessage}`,
           })
         }
+        break
+      }
+
+      case "transfer-token": {
+        // Auto-create wallet if needed
+        const wallet = await ensureWallet()
+
+        // Get recipient address
+        let recipientAddress = interaction.options.getString("recipient", true)
+        const customAddress = interaction.options.getString("custom_address")
+
+        if (recipientAddress === "custom") {
+          if (!customAddress) {
+            await interaction.editReply({
+              content: "❌ Please provide a custom address when selecting 'Custom address'",
+            })
+            return
+          }
+          recipientAddress = customAddress
+        }
+
+        const amount = interaction.options.getInteger("amount") || 69420
+
+        await interaction.editReply({
+          content:
+            `🔄 **Preparing Token Transfer...**\n\n` +
+            `📊 **Transfer Details:**\n` +
+            `• Token: TRANSFER-TOKEN (my token)\n` +
+            `• Amount: \`${amount.toLocaleString()}\` tokens\n` +
+            `• From: \`${wallet.address}\`\n` +
+            `• To: \`${recipientAddress}\`\n\n` +
+            `🎨 **NFT Contract Info:**\n` +
+            `• Type: Transfer-enabled NFT\n` +
+            `• Verification Key: \`4107a63e13aa37f785c85e7a7bb6d1c255aab13ad2f2ef83535d34d64a7e1e78\`\n` +
+            `• Available Supply: 90,000 tokens\n\n` +
+            `🔗 **Token UTXO:**\n` +
+            `• NFT TXID: \`dff7e977d2a7f8883b65b3961f27782b91c6ca3e1efb1d27851fcea4ee34a514\`\n` +
+            `• Spell TXID: \`9a2d8b5cf1450e4591817ee818386e96c30bb6eb570e7b12c76320d3c3cb6ea4\`\n\n` +
+            `📝 **Instructions:**\n` +
+            `To find your token UTXO, run:\n` +
+            `\`\`\`\nbitcoin-cli -testnet4 -rpcwallet="nftcharm_wallet" listunspent\n\`\`\`\n\n` +
+            `🌐 **View Transactions:**\n` +
+            `• NFT TX: https://mempool.space/testnet4/tx/dff7e977d2a7f8883b65b3961f27782b91c6ca3e1efb1d27851fcea4ee34a514\n` +
+            `• Spell TX: https://mempool.space/testnet4/tx/9a2d8b5cf1450e4591817ee818386e96c30bb6eb570e7b12c76320d3c3cb6ea4\n\n` +
+            `📍 **Previous Transfer:**\n` +
+            `• Recipient: \`tb1q4hljlww9gw6vdk7gakw9r5ktplhxj5knecawqt\`\n` +
+            `• Amount: 10,000 tokens\n\n` +
+            `⚠️ **Note:** Token transfer functionality requires integration with Bitcoin RPC.\n` +
+            `Use the spell transaction UTXO for transfers.`,
+        })
         break
       }
     }
