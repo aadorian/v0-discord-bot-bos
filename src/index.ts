@@ -38,6 +38,10 @@ const airdropManager = new AirdropManager(db, walletManager)
 
 // Define slash commands
 const commands = [
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Show all available commands and their descriptions"),
+
   new SlashCommandBuilder().setName("wallet").setDescription("Get your wallet address and balance"),
 
   new SlashCommandBuilder().setName("balance").setDescription("Check your token balance"),
@@ -181,6 +185,16 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("query-transfer-token")
+    .setDescription("Query transfer-token addresses from a spell transaction")
+    .addStringOption((option) =>
+      option
+        .setName("spell_txid")
+        .setDescription("Spell transaction ID (default: 9a2d8b5cf1450e4591817ee818386e96c30bb6eb570e7b12c76320d3c3cb6ea4)")
+        .setRequired(false),
+    ),
+
+  new SlashCommandBuilder()
     .setName("transfer-token")
     .setDescription("Transfer your minted tokens to another address")
     .addStringOption((option) =>
@@ -249,6 +263,45 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.deferReply({ ephemeral: false })
 
     switch (interaction.commandName) {
+      case "help": {
+        await interaction.editReply({
+          content:
+            `📚 **Bot Commands Help**\n\n` +
+            `**🔐 Wallet & Balance Commands:**\n` +
+            `• \`/wallet\` - Get your wallet address and balance (with QR code)\n` +
+            `• \`/balance\` - Check your token balance and statistics\n` +
+            `• \`/stats\` - View your personal statistics (mining, tipping, etc.)\n` +
+            `• \`/clear\` - Clear all your data (wallet, balance, mining history)\n\n` +
+            `**💰 Token & Social Commands:**\n` +
+            `• \`/tip [user] [amount] [message]\` - Tip your tokens to another user\n` +
+            `• \`/leaderboard [type]\` - View community leaderboard (balance/mining/tipping)\n` +
+            `• \`/transfer-token [recipient] [amount]\` - Transfer tokens to another address\n\n` +
+            `**₿ Bitcoin Transaction Commands:**\n` +
+            `• \`/send-myself\` - Send Bitcoin from your address to itself\n` +
+            `• \`/send [address] [amount]\` - Send Bitcoin to another address (testnet4)\n` +
+            `• \`/sendto [address] [amount]\` - Send Bitcoin transaction (like bitcoin-cli)\n` +
+            `• \`/transactions [limit]\` - Get transaction history for your wallet\n\n` +
+            `**🔍 Query & Analysis Commands:**\n` +
+            `• \`/query-tokens [app_id] [app_vk] [token_utxo] [witness_utxo]\` - Query token information\n` +
+            `• \`/tx-raw [txid]\` - Get raw transaction data and parse charms.dev Token Standard spell\n` +
+            `• \`/query-transfer-token [spell_txid]\` - Query transfer-token addresses from a spell\n` +
+            `• \`/btc-info\` - Display Bitcoin technical data structures and types\n\n` +
+            `**ℹ️ Information:**\n` +
+            `• All addresses include QR codes for easy scanning\n` +
+            `• Network: Bitcoin Testnet4\n` +
+            `• Token Standard: charms.dev Token Standard\n` +
+            `• Explorer: https://mempool.space/testnet4\n\n` +
+            `**💡 Tips:**\n` +
+            `• Use \`/wallet\` to get started and create your wallet\n` +
+            `• Use \`/balance\` to check your token balance\n` +
+            `• Use \`/help\` anytime to see this message\n\n` +
+            `**🔗 Useful Links:**\n` +
+            `• [Mempool Explorer](https://mempool.space/testnet4)\n` +
+            `• [Charms.dev Documentation](https://charms.dev)`,
+        })
+        break
+      }
+
       case "wallet": {
         // Show wallet information - auto-create if needed
         const wallet = await ensureWallet()
@@ -910,6 +963,73 @@ client.on("interactionCreate", async (interaction) => {
             `Use the spell transaction UTXO for transfers.`,
           files: [fromQR, toQR],
         })
+        break
+      }
+
+      case "query-transfer-token": {
+        const spellTxid = interaction.options.getString("spell_txid") || "9a2d8b5cf1450e4591817ee818386e96c30bb6eb570e7b12c76320d3c3cb6ea4"
+
+        await interaction.editReply({
+          content: `🔄 **Querying Transfer-Token Addresses...**\n\nFetching spell transaction and parsing token addresses...`,
+        })
+
+        try {
+          const result = await walletManager.queryTransferTokenAddresses(spellTxid)
+
+          // Format spell information
+          let spellInfo = ""
+          if (result.spell) {
+            spellInfo = `\n**🔮 Spell Information:**\n` +
+              `• Version: \`${result.spell.version || "N/A"}\`\n` +
+              (result.appId ? `• App ID: \`${result.appId}\`\n` : "") +
+              (result.appVk ? `• App VK: \`${result.appVk}\`\n` : "") +
+              `• Inputs: \`${result.spell.ins?.length || 0}\`\n` +
+              `• Outputs: \`${result.spell.outs?.length || 0}\`\n`
+          }
+
+          // Format token addresses
+          let addressesText = ""
+          if (result.tokenAddresses.length === 0) {
+            addressesText = `\n❌ **No token addresses found**\n\n` +
+              `This spell transaction may not contain transfer-token addresses, or all UTXOs have been spent.`
+          } else {
+            addressesText = `\n**📍 Transfer-Token Addresses (${result.tokenAddresses.length}):**\n\n`
+            
+            result.tokenAddresses.forEach((addr, index) => {
+              const status = addr.confirmed ? "✅" : "⏳"
+              const amountText = addr.amount !== undefined ? `\n   💰 Token Amount: \`${addr.amount}\`` : ""
+              addressesText += `${index + 1}. ${status} **Address:** \`${addr.address}\`\n`
+              addressesText += `   🔗 UTXO: \`${addr.utxo}\`${amountText}\n`
+              addressesText += `   🌐 Explorer: https://mempool.space/testnet4/tx/${addr.utxo.split(":")[0]}\n\n`
+            })
+          }
+
+          // Generate QR codes for addresses (limit to first 5 to avoid Discord limits)
+          const qrCodes: AttachmentBuilder[] = []
+          for (let i = 0; i < Math.min(result.tokenAddresses.length, 5); i++) {
+            try {
+              const qr = await generateQRCode(result.tokenAddresses[i].address)
+              qrCodes.push(qr)
+            } catch (error) {
+              console.error(`Error generating QR for address ${i}:`, error)
+            }
+          }
+
+          await interaction.editReply({
+            content:
+              `🔍 **Transfer-Token Query Results**\n\n` +
+              `**Spell Transaction ID:**\n\`${result.spellTxid}\`\n` +
+              spellInfo +
+              addressesText +
+              `🌐 **View Spell Transaction:**\nhttps://mempool.space/testnet4/tx/${result.spellTxid}`,
+            files: qrCodes.length > 0 ? qrCodes : undefined,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+          await interaction.editReply({
+            content: `❌ **Query Failed**\n\n${errorMessage}`,
+          })
+        }
         break
       }
     }

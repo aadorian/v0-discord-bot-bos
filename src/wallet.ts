@@ -734,4 +734,153 @@ export class WalletManager {
     }
   }
 
+  async queryTransferTokenAddresses(spellTxid: string): Promise<{
+    spellTxid: string
+    spell?: any
+    tokenAddresses: Array<{
+      address: string
+      utxo: string
+      amount?: number
+      confirmed: boolean
+    }>
+    appId?: string
+    appVk?: string
+  }> {
+    try {
+      // Fetch the spell transaction
+      const spellData = await this.getTransactionRawData(spellTxid)
+      
+      if (!spellData.spell) {
+        throw new Error("No spell found in transaction. This may not be a valid charms.dev token transaction.")
+      }
+
+      const spell = spellData.spell
+      
+      // Extract app information from spell
+      const appId = spell.apps?.["$00"]?.split("/")?.[1] || spell.apps?.["$00"]
+      const appVk = spell.apps?.["$00"]?.split("/")?.[2] || undefined
+
+      // Extract addresses from spell outputs
+      const tokenAddresses: Array<{
+        address: string
+        utxo: string
+        amount?: number
+        confirmed: boolean
+      }> = []
+
+      // Get addresses from spell outputs
+      if (spell.outs && Array.isArray(spell.outs)) {
+        for (const output of spell.outs) {
+          if (output.address) {
+            // The UTXO is the spell transaction output
+            const utxo = `${spellTxid}:${spell.outs.indexOf(output)}`
+            
+            // Get token amount from charms in the output
+            const tokenAmount = output.charms?.["$00"] || output.charms?.[0] || undefined
+
+            // Check UTXO status by querying the address
+            try {
+              const utxoResponse = await fetch(`https://mempool.space/testnet4/api/tx/${spellTxid}`)
+              if (utxoResponse.ok) {
+                const txData = (await utxoResponse.json()) as MempoolTransaction
+                const confirmed = txData.status?.confirmed || false
+                
+                // Check if UTXO is unspent by querying address UTXOs
+                try {
+                  const addressUtxosResponse = await fetch(`https://mempool.space/testnet4/api/address/${output.address}/utxo`)
+                  if (addressUtxosResponse.ok) {
+                    const addressUtxos = await addressUtxosResponse.json() as Array<{ txid: string; vout: number }>
+                    const isUnspent = addressUtxos.some(utxo => utxo.txid === spellTxid && utxo.vout === spell.outs.indexOf(output))
+                    
+                    if (isUnspent) {
+                      tokenAddresses.push({
+                        address: output.address,
+                        utxo,
+                        amount: tokenAmount,
+                        confirmed,
+                      })
+                    }
+                  } else {
+                    // If we can't check, add it anyway
+                    tokenAddresses.push({
+                      address: output.address,
+                      utxo,
+                      amount: tokenAmount,
+                      confirmed,
+                    })
+                  }
+                } catch (utxoCheckError) {
+                  // If we can't check UTXO status, add it anyway
+                  tokenAddresses.push({
+                    address: output.address,
+                    utxo,
+                    amount: tokenAmount,
+                    confirmed,
+                  })
+                }
+              }
+            } catch (error) {
+              console.error(`Error checking UTXO ${utxo}:`, error)
+              // Still add the address even if we can't verify UTXO status
+              tokenAddresses.push({
+                address: output.address,
+                utxo,
+                amount: tokenAmount,
+                confirmed: spellData.status?.confirmed || false,
+              })
+            }
+          }
+        }
+      }
+
+      // Also check inputs to find source addresses
+      if (spell.ins && Array.isArray(spell.ins)) {
+        for (const input of spell.ins) {
+          if (input.utxo_id) {
+            const [inputTxid, inputVout] = input.utxo_id.split(":")
+            
+            try {
+              // Fetch the input transaction to get the address
+              const inputTxResponse = await fetch(`https://mempool.space/testnet4/api/tx/${inputTxid}`)
+              if (inputTxResponse.ok) {
+                const inputTxData = (await inputTxResponse.json()) as MempoolTransaction
+                const inputOutput = inputTxData.vout?.[parseInt(inputVout)]
+                
+                if (inputOutput?.scriptpubkey_address) {
+                  const address = inputOutput.scriptpubkey_address
+                  const utxo = input.utxo_id
+                  const tokenAmount = input.charms?.["$00"] || input.charms?.[0] || undefined
+
+                  // Check if this address already exists in our list
+                  const existing = tokenAddresses.find(a => a.address === address)
+                  if (!existing) {
+                    tokenAddresses.push({
+                      address,
+                      utxo,
+                      amount: tokenAmount,
+                      confirmed: inputTxData.status?.confirmed || false,
+                    })
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`Error fetching input transaction ${inputTxid}:`, error)
+            }
+          }
+        }
+      }
+
+      return {
+        spellTxid,
+        spell,
+        tokenAddresses,
+        appId,
+        appVk,
+      }
+    } catch (error) {
+      console.error("Error querying transfer-token addresses:", error)
+      throw new Error(`Failed to query transfer-token addresses: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
 }
