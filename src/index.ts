@@ -1,11 +1,31 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js"
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } from "discord.js"
 import { config } from "dotenv"
+import * as QRCode from "qrcode"
 import { WalletManager } from "./wallet"
 import { MiningManager } from "./mining"
 import { AirdropManager } from "./airdrop"
 import { DatabaseManager } from "./database"
 
 config()
+
+// Helper function to generate QR code for an address
+async function generateQRCode(address: string): Promise<AttachmentBuilder> {
+  try {
+    const qrCodeBuffer = await QRCode.toBuffer(address, {
+      type: "png",
+      width: 300,
+      margin: 2,
+      color: {
+        dark: "#000000",
+        light: "#FFFFFF",
+      },
+    })
+    return new AttachmentBuilder(qrCodeBuffer, { name: `qr-${address.substring(0, 10)}.png` })
+  } catch (error) {
+    console.error("Error generating QR code:", error)
+    throw error
+  }
+}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -246,6 +266,9 @@ client.on("interactionCreate", async (interaction) => {
           btcBalanceText = `\n**Bitcoin Balance:** Unable to fetch\n`
         }
 
+        // Generate QR code for the address
+        const qrCode = await generateQRCode(wallet.address)
+
         // Send wallet info as ephemeral message
         await interaction.deleteReply()
         await interaction.followUp({
@@ -256,6 +279,7 @@ client.on("interactionCreate", async (interaction) => {
             `**Seed Phrase:** ||\`${wallet.seedPhrase}\`||\n` +
             btcBalanceText +
             `\n⚠️ **NEVER share your seed phrase with anyone!**`,
+          files: [qrCode],
         })
         break
       }
@@ -517,6 +541,9 @@ client.on("interactionCreate", async (interaction) => {
         try {
           const result = await walletManager.createSelfTransaction(userId)
 
+          // Generate QR code for the address
+          const addressQR = await generateQRCode(wallet.address)
+
           await interaction.editReply({
             content:
               `✅ **Transaction Sent Successfully!**\n\n` +
@@ -526,6 +553,7 @@ client.on("interactionCreate", async (interaction) => {
               `🌐 **View on Explorer:**\n` +
               `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
               `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+            files: [addressQR],
           })
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
@@ -552,6 +580,10 @@ client.on("interactionCreate", async (interaction) => {
         try {
           const result = await walletManager.createTransaction(userId, recipientAddress, amount)
 
+          // Generate QR codes for both addresses
+          const fromQR = await generateQRCode(wallet.address)
+          const toQR = await generateQRCode(recipientAddress)
+
           await interaction.editReply({
             content:
               `✅ **Transaction Sent Successfully!**\n\n` +
@@ -563,6 +595,7 @@ client.on("interactionCreate", async (interaction) => {
               `🌐 **View on Explorer:**\n` +
               `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
               `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+            files: [fromQR, toQR],
           })
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
@@ -595,6 +628,10 @@ client.on("interactionCreate", async (interaction) => {
         try {
           const result = await walletManager.createTransaction(userId, recipientAddress, amount)
 
+          // Generate QR codes for both addresses
+          const fromQR = await generateQRCode(wallet.address)
+          const toQR = await generateQRCode(recipientAddress)
+
           await interaction.editReply({
             content:
               `✅ **Transaction Sent Successfully!**\n\n` +
@@ -606,6 +643,7 @@ client.on("interactionCreate", async (interaction) => {
               `🌐 **View on Explorer:**\n` +
               `https://mempool.space/testnet4/tx/${result.txid}\n\n` +
               `⏳ The transaction has been broadcast to the Bitcoin testnet4 network.`,
+            files: [fromQR, toQR],
           })
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
@@ -840,6 +878,10 @@ client.on("interactionCreate", async (interaction) => {
 
         const amount = interaction.options.getInteger("amount") || 69420
 
+        // Generate QR codes for both addresses
+        const fromQR = await generateQRCode(wallet.address)
+        const toQR = await generateQRCode(recipientAddress)
+
         await interaction.editReply({
           content:
             `🔄 **Preparing Token Transfer...**\n\n` +
@@ -866,6 +908,7 @@ client.on("interactionCreate", async (interaction) => {
             `• Amount: 10,000 tokens\n\n` +
             `⚠️ **Note:** Token transfer functionality requires integration with Bitcoin RPC.\n` +
             `Use the spell transaction UTXO for transfers.`,
+          files: [fromQR, toQR],
         })
         break
       }
