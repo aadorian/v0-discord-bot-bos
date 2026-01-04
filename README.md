@@ -1,6 +1,6 @@
 # Discord Charms Airdrop Bot
 
-A TypeScript Discord bot with airdrop functionality inspired by [bro.charms.dev](https://bro.charms.dev). Features proof-of-work mining, wallet management, and token distribution.
+A TypeScript Discord bot with airdrop functionality inspired by [bro.charms.dev](https://bro.charms.dev).
 
 ## Features
 
