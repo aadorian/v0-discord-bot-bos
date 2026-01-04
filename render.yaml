@@ -1,0 +1,15 @@
+# Render Blueprint for Discord Bot
+services:
+  - type: web
+    name: discord-bot
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DEFAULT_SEED_PHRASE
+        sync: false
+

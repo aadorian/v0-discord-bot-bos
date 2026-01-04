@@ -112,6 +112,40 @@ npm run build
 npm start
 ```
 
+## Deployment
+
+### ⚠️ Important: Platform Selection
+
+Discord bots require **persistent WebSocket connections**, which makes them incompatible with traditional serverless platforms like Vercel.
+
+### Recommended Platforms
+
+1. **Railway** (Recommended) - Easy deployment, persistent connections
+2. **Render** - Simple setup, free tier available
+3. **Fly.io** - Global distribution, Docker support
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
+
+### Quick Deploy to Railway
+
+```bash
+# Install Railway CLI
+npm i -g @railway/cli
+
+# Login and deploy
+railway login
+railway init
+railway variables set DISCORD_TOKEN=your_token
+railway variables set DEFAULT_SEED_PHRASE=your_seed_phrase
+railway up
+```
+
+### Environment Variables
+
+Set these in your deployment platform:
+- `DISCORD_TOKEN` - Your Discord bot token
+- `DEFAULT_SEED_PHRASE` - Your 12-word seed phrase
+
 ## How It Works
 
 ### 1. Getting Started
